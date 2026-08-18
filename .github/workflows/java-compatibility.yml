@@ -55,7 +55,12 @@ jobs:
             "${base_url}/${archive_name}.sha512" \
             --output "${RUNNER_TEMP}/${archive_name}.sha512"
           cd "${RUNNER_TEMP}"
-          sha512sum --check "${archive_name}.sha512"
+          expected_sha512="$(tr -d '[:space:]' < "${archive_name}.sha512")"
+          if [[ ! "${expected_sha512}" =~ ^[[:xdigit:]]{128}$ ]]; then
+            echo "Invalid SHA-512 digest published for ${archive_name}" >&2
+            exit 1
+          fi
+          printf '%s  %s\n' "${expected_sha512}" "${archive_name}" | sha512sum --check -
           tar --extract --gzip --file "${archive_name}"
           echo "${RUNNER_TEMP}/apache-maven-${maven_version}/bin" >> "${GITHUB_PATH}"
 
@@ -71,6 +76,7 @@ jobs:
         shell: bash
         run: >-
           mvn --batch-mode --no-transfer-progress
+          --file java/pom.xml
           -pl sdk-bundle -am verify
 
       - name: Locate bundled library
@@ -78,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          fat_jars=(sdk-bundle/target/oppex-integration-sdk-*.jar)
+          fat_jars=(java/sdk-bundle/target/oppex-integration-sdk-*.jar)
           test "${#fat_jars[@]}" -eq 1
           echo "FAT_JAR=${fat_jars[0]}" >> "${GITHUB_ENV}"
 
@@ -86,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          javap -verbose sdk-http/target/classes/dev/oppex/sdk/api/IncidentClient.class \
+          javap -verbose java/sdk-http/target/classes/dev/oppex/sdk/api/IncidentClient.class \
             | grep --fixed-strings "major version: 51"
 
       - name: Verify fat JAR is an importable library
@@ -109,7 +115,7 @@ jobs:
           set -euo pipefail
           consumer_classes="${RUNNER_TEMP}/external-consumer"
           mkdir -p "${consumer_classes}"
-          javac -cp "${FAT_JAR}" -d "${consumer_classes}" .github/smoke/ExternalConsumer.java
+          javac -cp "${FAT_JAR}" -d "${consumer_classes}" .github/smoke/java/ExternalConsumer.java
           java -cp "${FAT_JAR}:${consumer_classes}" ExternalConsumer \
             | tee "${RUNNER_TEMP}/external-consumer-output.txt"
           grep --fixed-strings "EXTERNAL_CONSUMER_OK" \
@@ -119,6 +125,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: oppex-integration-sdk-java-${{ matrix.java }}
-          path: sdk-bundle/target/oppex-integration-sdk-*.jar
+          path: java/sdk-bundle/target/oppex-integration-sdk-*.jar
           if-no-files-found: error
           retention-days: 7

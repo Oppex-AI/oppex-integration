@@ -26,4 +26,4 @@ mvn -pl sdk-bundle -am clean verify
 jar tf sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar
 ```
 
-Compile and run `.github/smoke/ExternalConsumer.java` with only the bundled JAR on the classpath. A passing test must not rely on separate `sdk-core`, `sdk-http`, Apache, or Jackson JARs.
+Compile and run the repository-root `.github/smoke/java/ExternalConsumer.java` with only the bundled JAR on the classpath. A passing test must not rely on separate `sdk-core`, `sdk-http`, Apache, or Jackson JARs.
