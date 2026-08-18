@@ -1,0 +1,124 @@
+name: Java compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: java-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  library-fat-jar:
+    name: Build and import library on Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+          - "7"
+          - "8"
+          - "11"
+          - "17"
+          - "21"
+          - "25"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Azul Zulu JDK ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: ${{ matrix.java }}
+          java-package: jdk
+          cache: maven
+
+      - name: Install Maven 3.8.9 for Java 7
+        if: matrix.java == '7'
+        shell: bash
+        run: |
+          set -euo pipefail
+          maven_version="3.8.9"
+          archive_name="apache-maven-${maven_version}-bin.tar.gz"
+          base_url="https://archive.apache.org/dist/maven/maven-3/${maven_version}/binaries"
+          curl --fail --silent --show-error --location \
+            "${base_url}/${archive_name}" \
+            --output "${RUNNER_TEMP}/${archive_name}"
+          curl --fail --silent --show-error --location \
+            "${base_url}/${archive_name}.sha512" \
+            --output "${RUNNER_TEMP}/${archive_name}.sha512"
+          cd "${RUNNER_TEMP}"
+          sha512sum --check "${archive_name}.sha512"
+          tar --extract --gzip --file "${archive_name}"
+          echo "${RUNNER_TEMP}/apache-maven-${maven_version}/bin" >> "${GITHUB_PATH}"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          javac -version
+          mvn -version
+
+      - name: Compile, test, and create fat JAR
+        shell: bash
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          -pl sdk-bundle -am verify
+
+      - name: Locate bundled library
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fat_jars=(sdk-bundle/target/oppex-integration-sdk-*.jar)
+          test "${#fat_jars[@]}" -eq 1
+          echo "FAT_JAR=${fat_jars[0]}" >> "${GITHUB_ENV}"
+
+      - name: Verify Java 7 SDK bytecode
+        shell: bash
+        run: |
+          set -euo pipefail
+          javap -verbose sdk-http/target/classes/dev/oppex/sdk/api/IncidentClient.class \
+            | grep --fixed-strings "major version: 51"
+
+      - name: Verify fat JAR is an importable library
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "${FAT_JAR}"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/api/IncidentClient.class"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/model/IncidentRequest.class"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "org/apache/http/impl/client/CloseableHttpClient.class"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "com/fasterxml/jackson/core/JsonFactory.class"
+          if unzip -p "${FAT_JAR}" META-INF/MANIFEST.MF | grep --quiet '^Main-Class:'; then
+            echo "Bundled SDK must be a library without Main-Class" >&2
+            exit 1
+          fi
+
+      - name: Compile and run an external consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_classes="${RUNNER_TEMP}/external-consumer"
+          mkdir -p "${consumer_classes}"
+          javac -cp "${FAT_JAR}" -d "${consumer_classes}" .github/smoke/ExternalConsumer.java
+          java -cp "${FAT_JAR}:${consumer_classes}" ExternalConsumer \
+            | tee "${RUNNER_TEMP}/external-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" \
+            "${RUNNER_TEMP}/external-consumer-output.txt"
+
+      - name: Upload fat JAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: oppex-integration-sdk-java-${{ matrix.java }}
+          path: sdk-bundle/target/oppex-integration-sdk-*.jar
+          if-no-files-found: error
+          retention-days: 7
