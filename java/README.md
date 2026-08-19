@@ -4,9 +4,62 @@ The Oppex Java SDK posts incidents to the Oppex REST API without exposing HTTP d
 
 ## Requirements
 
-- Java 7 or newer
+- A Java Development Kit (JDK), version 7 or newer
+- Apache Maven; use the version appropriate for the JDK in the table below
 - Apache HttpClient is an internal implementation detail
 - No dependency on Spring, Quarkus, Dropwizard, Micronaut, or Jakarta EE in the SDK artifacts
+
+The SDK is compiled to Java 7-compatible bytecode regardless of which supported
+JDK runs the build.
+
+### Maven version by Java version
+
+| JDK running Maven | Maven version | Build behavior |
+| --- | --- | --- |
+| Java 7 | Maven 3.8.9 | Required because Maven 3.9+ cannot run on Java 7. The `java-7-build` profile selects Java 7-compatible Maven plugins. |
+| Java 8 | Maven 3.9.x; 3.9.16 recommended | Runs the standard build. |
+| Java 11 | Maven 3.9.x; 3.9.16 recommended | Runs the standard build. |
+| Java 17 | Maven 3.9.x; 3.9.16 recommended | Runs the standard build. |
+| Java 21 | Maven 3.9.x; 3.9.16 recommended | The `modern-jdk-ecj` profile uses the Eclipse compiler to retain Java 7 source compatibility. |
+| Java 25 | Maven 3.9.x; 3.9.16 recommended | The `modern-jdk-ecj` profile uses the Eclipse compiler to retain Java 7 source compatibility. |
+
+CI installs Maven 3.8.9 explicitly for its Java 7 job. Its Java 8, 11, 17, 21,
+and 25 jobs use the Maven 3.9.x installation supplied by the GitHub Actions
+runner, so those jobs are not pinned to an exact patch release.
+
+## First-time setup
+
+For the simplest development setup, install JDK 17 and Maven 3.9.16. Download a
+JDK from a distribution such as [Azul Zulu](https://www.azul.com/downloads/) (the
+distribution used by CI), and install Maven using the
+[official Maven installation guide](https://maven.apache.org/install.html) or
+your operating system's package manager.
+
+After installing the tools, clone and build the SDK:
+
+```shell
+git clone https://github.com/Oppex-AI/oppex-integration.git
+cd oppex-integration/java
+
+java -version
+javac -version
+mvn -version
+
+mvn -pl sdk-bundle -am clean install
+```
+
+`mvn -version` must report the intended JDK as its Java runtime. The first Maven
+build downloads the plugins and dependencies, runs the tests, and installs the
+SDK artifacts in the local Maven repository. The dependency-inclusive JAR is
+then available at:
+
+```text
+sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar
+```
+
+If you must build while running Java 7, install Maven 3.8.9 from the
+[Apache Maven archive](https://archive.apache.org/dist/maven/maven-3/3.8.9/binaries/)
+and use the Java 7 command in [Build with a specific local Java version](#build-with-a-specific-local-java-version).
 
 ## Library artifact
 
@@ -122,3 +175,7 @@ after each run if you want to retain separate local results per JDK.
 The GitHub Actions matrix performs these as independent jobs, one job for each
 declared Java version. GitHub may execute those jobs in parallel; each job builds
 and uploads its own language- and Java-qualified fat-JAR artifact.
+
+## License
+
+This project is licensed under the [Apache License 2.0](../LICENSE).

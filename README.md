@@ -23,3 +23,7 @@ The dependency-inclusive library is written to:
 ```text
 java/sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar
 ```
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).

@@ -137,6 +137,7 @@ java/
 ├── README.md
 ├── CLAUDE.md
 ├── sdk-core/
+│   ├── CLAUDE.md
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/dev/oppex/sdk/
@@ -147,6 +148,7 @@ java/
 │       │       └── Severity.java
 │       └── test/java/dev/oppex/sdk/model/
 ├── sdk-http/
+│   ├── CLAUDE.md
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/dev/oppex/sdk/
@@ -162,6 +164,7 @@ java/
 │   ├── CLAUDE.md
 │   └── pom.xml
 └── examples/
+    ├── CLAUDE.md
     ├── pom.xml
     ├── compatibility-smoke/
     ├── plain-java/
@@ -594,7 +597,7 @@ Never remove or change the meaning of existing public methods in a minor release
 - Do not commit `target/`, IDE files, local Maven repositories, credentials, API keys, or captured incident bodies.
 - Do not place secrets in tests; use obvious dummy values such as `secret` or `api-key`.
 - Keep generated files out of source directories.
-- Package-level `CLAUDE.md` files are repository guidance, not runtime resources. The root JAR configuration excludes them from published artifacts even if the compiler copies them into `target/classes`.
+- Keep `CLAUDE.md` guidance at the Java project, examples, and module roots rather than adding package-level or test-level copies. The root JAR configuration excludes these files from published artifacts.
 - Do not add mutable static state. Immutable constants and conventional loggers are acceptable; runtime counters and resources belong to client instances.
 - Internal constructors may be widened only when package boundaries make it necessary; this does not make the class supported API.
 - Prefer constructor injection for internal collaborators and package-private test seams over global hooks.

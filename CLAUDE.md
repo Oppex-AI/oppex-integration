@@ -66,8 +66,6 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
-- Workflow rules: [`.github/workflows/CLAUDE.md`](.github/workflows/CLAUDE.md)
-- CI consumers: [`.github/smoke/CLAUDE.md`](.github/smoke/CLAUDE.md)
 
 ## Adding a language SDK
 
