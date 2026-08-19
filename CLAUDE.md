@@ -65,6 +65,7 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 ## Current language guides
 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
+- JavaScript/TypeScript: [`javascript/CLAUDE.md`](javascript/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
 
 ## Adding a language SDK

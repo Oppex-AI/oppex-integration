@@ -1,0 +1,144 @@
+name: JavaScript compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: javascript-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  library-package:
+    name: Build and import library on Node ${{ matrix.node }} (${{ matrix.branch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - branch: release/1.x
+            node: "8"
+          - branch: release/1.x
+            node: "16"
+          - branch: release/1.x
+            node: "17"
+          - branch: feat/node-sdk
+            node: "18"
+          - branch: feat/node-sdk
+            node: "20"
+          - branch: feat/node-sdk
+            node: "22"
+          - branch: feat/node-sdk
+            node: "24"
+          - branch: feat/node-sdk
+            node: "26"
+
+    steps:
+      - name: Check out ${{ matrix.branch }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+
+      - name: Install and build
+        shell: bash
+        working-directory: javascript
+        run: |
+          set -euo pipefail
+          npm install
+          npm run build
+
+      - name: Verify the Node-8 compile-time guardrail
+        if: matrix.branch == 'release/1.x'
+        shell: bash
+        working-directory: javascript
+        run: |
+          set -euo pipefail
+          cp src/internal/transport.ts "${RUNNER_TEMP}/transport.ts.bak"
+          printf '\nfetch("https://example.com");\n' >> src/internal/transport.ts
+          if npm run build; then
+            echo "release/1.x must fail to compile when src/ calls fetch() directly" >&2
+            cp "${RUNNER_TEMP}/transport.ts.bak" src/internal/transport.ts
+            exit 1
+          fi
+          cp "${RUNNER_TEMP}/transport.ts.bak" src/internal/transport.ts
+          npm run build
+
+      - name: Run network-free smoke test
+        shell: bash
+        working-directory: javascript
+        run: |
+          set -euo pipefail
+          node test/smoke.js | tee "${RUNNER_TEMP}/smoke-output.txt"
+          grep --fixed-strings "SMOKE_OK" "${RUNNER_TEMP}/smoke-output.txt"
+
+      - name: Pack tarball
+        shell: bash
+        working-directory: javascript
+        run: npm pack --pack-destination "${RUNNER_TEMP}"
+
+      - name: Install and run external consumer via npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="${RUNNER_TEMP}/consumer-npm"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && npm install "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-npm-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-npm-output.txt"
+
+      # pnpm/yarn via corepack need a modern Node to run their own CLI — skipped on the
+      # Node 8 entry, matching how the Java workflow's Java-7 entry gets its own special
+      # handling rather than being forced through the same tooling as every other entry.
+      - name: Install and run external consumer via pnpm
+        if: matrix.node != '8'
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          consumer_dir="${RUNNER_TEMP}/consumer-pnpm"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && pnpm install "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-pnpm-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-pnpm-output.txt"
+
+      - name: Install and run external consumer via yarn
+        if: matrix.node != '8'
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="${RUNNER_TEMP}/consumer-yarn"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && yarn add "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-yarn-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-yarn-output.txt"
+
+      - name: Upload package tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: oppex-integration-sdk-javascript-node${{ matrix.node }}
+          path: ${{ runner.temp }}/oppex-integration-sdk-*.tgz
+          if-no-files-found: error
+          retention-days: 7
