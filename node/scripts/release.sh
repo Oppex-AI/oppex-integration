@@ -42,6 +42,25 @@ fi
 
 ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
+# `exit` inside release_branch below terminates the whole script immediately — this
+# trap is what actually guarantees a return to the original branch even on early
+# failure, since a plain "git checkout $ORIGINAL_BRANCH at the bottom of the script"
+# would never be reached in that case.
+cleanup() {
+  current="$(git rev-parse --abbrev-ref HEAD)"
+  if [ "$current" = "$ORIGINAL_BRANCH" ]; then
+    return
+  fi
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "Left on $current with an uncommitted, failed release attempt." >&2
+    echo "Run 'git checkout -- node/package.json node/package-lock.json', then 'git checkout $ORIGINAL_BRANCH'." >&2
+    return
+  fi
+  git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || return
+  (cd node && npm install --silent && npm run build --silent) >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 ensure_branch_exists() {
   branch="$1"
   if git show-ref --verify --quiet "refs/heads/${branch}"; then
@@ -120,9 +139,6 @@ fi
 if [ "$MODERN_VERSION" != "-" ]; then
   release_branch "feat/node-sdk" "$MODERN_VERSION"
 fi
-
-git checkout "$ORIGINAL_BRANCH"
-(cd node && npm install --silent && npm run build --silent)
 
 echo
 echo "Done. Returned to $ORIGINAL_BRANCH."
