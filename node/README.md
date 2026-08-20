@@ -8,12 +8,13 @@ POST https://api.oppex.ai/api/v1/incident/post
 
 Published as **`@oppex/integration-sdk`** across two independently versioned major
 lines, split at the one real Node capability boundary in the supported range (native
-`fetch`, Node 18):
+`fetch`, Node 18). Both are built from this one branch — see
+[`CLAUDE.md`](./CLAUDE.md) §2 for how:
 
-| Major | Node floor | Transport | Branch |
+| Major | Node floor | Transport | Variant |
 | --- | --- | --- | --- |
-| `^1.0.0` | `>=8` | core `http`/`https` | `release/1.x` |
-| `^2.0.0` | `>=18` | global `fetch` | `feat/node-sdk` (current) |
+| `^1.0.0` | `>=8` | core `http`/`https` | `legacy` |
+| `^2.0.0` | `>=18` | global `fetch` | `modern` |
 
 Install whichever major matches your runtime:
 
@@ -66,10 +67,9 @@ application shutdown.
 ## Build
 
 ```shell
-npm install
-npm run build
-node test/smoke.js
+scripts/build-variant.sh modern   # or legacy
 ```
 
-See [`CLAUDE.md`](./CLAUDE.md) for the engineering rationale behind the two-major
-structure and its documented behavioral differences from the Java SDK.
+Stages that variant's config/transport, installs, builds, and runs the full test
+suite. See [`CLAUDE.md`](./CLAUDE.md) for the engineering rationale behind the
+two-variant structure and its documented behavioral differences from the Java SDK.

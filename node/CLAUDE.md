@@ -21,33 +21,40 @@ const client = new IncidentClient({ apiKey, serviceKey, tenant });
 Create one client per application, reuse it concurrently, and close it during
 application shutdown — same lifecycle contract as the Java SDK.
 
-## 2. Two majors, not one, not three
+## 2. Two variants, one branch, no git divergence
 
 Real Node deployments in this SDK's support range span Node 8 through 26. Node 18 is
 the one capability boundary in that whole range with comparable significance to
 anything else (native `fetch`/`AbortController`/Web Streams) — there is no second
-boundary worth a third major. This SDK therefore ships as:
+boundary worth a third variant. This SDK ships as two npm majors:
 
-- **`@oppex/integration-sdk@^1`** — branch `release/1.x`, `engines.node >=8`. Transport:
-  core `http`/`https`, manual timeout (`req.setTimeout()` + `req.destroy()`). No
-  `AbortController` even for the Node 15–17 portion of this branch's range — one
+- **`@oppex/integration-sdk@^1`** ("legacy") — `engines.node >=8`. Transport: core
+  `http`/`https`, manual timeout (`req.setTimeout()` + `req.destroy()`). No
+  `AbortController` even for the Node 15–17 portion of this variant's range — one
   uniform mechanism across the whole 8–17 span avoids an unnecessary internal branch.
-- **`@oppex/integration-sdk@^2`** — branch `feat/node-sdk` (this repo's trunk-equivalent
-  for the SDK; there is no branch literally named `main` in this repository), `engines.
-  node >=18`. Transport: global `fetch` only, no `http`/`https` code at all.
+- **`@oppex/integration-sdk@^2`** ("modern") — `engines.node >=18`. Transport: global
+  `fetch` only, no `http`/`https` code at all.
 
-Both majors are authored from the same modern-TypeScript source (`import`/`export`,
-`async`/`await`, generics erased at compile time). Exactly 4 files are allowed to differ
-between the two branches — `src/internal/transport.ts`, `tsconfig.json`,
-`package.json`, and `package-lock.json` (the `@types/node` pin lives in the latter two).
-Everything else, **including this file**, must stay byte-identical — see §8 for the
-script that enforces it.
+Earlier revisions of this SDK maintained these as two separately-pushed git branches,
+kept in sync by a script. That structure is gone. Both variants now live in **one
+branch** (`master`), as files:
 
-**Maintenance policy**: `release/1.x` receives security/critical patches only.
-`feat/node-sdk` is where active feature development happens. This is standard practice
-(same as Stripe/Twilio/AWS SDK version-floor raises), not a permanent commitment to
-maintaining two diverging feature sets — a genuinely new capability boundary (a future
-Node LTS introducing something comparable to `fetch`) would justify a third major later,
+- `node/src/internal/transport.legacy.ts` / `transport.modern.ts` — the one piece of
+  real logic that differs
+- `node/variants/legacy/` / `node/variants/modern/` — each holding that variant's
+  `package.json`, `package-lock.json`, `tsconfig.json`
+
+Everything else — `IncidentClient.ts`, `RetryExecutor.ts`, `AsyncDispatcher.ts`, every
+model, every test — exists exactly once. There is nothing left to keep in sync, because
+there is no longer a second copy of anything to drift. `node/scripts/build-variant.sh
+<legacy|modern>` stages the requested variant's files into their canonical top-level
+locations and builds — see §6.
+
+**Maintenance policy**: "legacy" receives security/critical patches only. "modern" is
+where active feature development happens. This is standard practice (same as
+Stripe/Twilio/AWS SDK version-floor raises), not a permanent commitment to maintaining
+two diverging feature sets — a genuinely new capability boundary (a future Node LTS
+introducing something comparable to `fetch`) would justify a third variant later,
 following the same reasoning, not a speculative one added now.
 
 ## 3. Why flat, not core/http/bundle like Java
@@ -57,7 +64,7 @@ problems this SDK doesn't have: avoiding a circular dependency between the publi
 façade and its only implementation, and shading third-party runtime dependencies
 (Apache HttpClient, Jackson) into one fat jar so consumers don't resolve transitive
 Maven coordinates or risk classpath collisions. This SDK has **zero runtime
-dependencies** in both majors — nothing to shade, no transitive graph to hide, no
+dependencies** in both variants — nothing to shade, no transitive graph to hide, no
 classpath collision risk. npm's own module resolution already gives consumers one
 importable unit. A model-only sub-package would be pure ceremony with no consumer
 benefit.
@@ -67,32 +74,41 @@ benefit.
 `target` only downlevels *syntax* — it does nothing about *runtime* API availability.
 Modern-looking TypeScript that calls `fetch()`, `AbortController`, `Array.prototype.at`,
 or `Object.fromEntries` will compile cleanly and crash at runtime on Node 8 unless
-something catches it at compile time. `release/1.x`'s `tsconfig.json` uses `target:
+something catches it at compile time. `node/variants/legacy/tsconfig.json` uses `target:
 "ES2017"` (Node 8's real syntax ceiling — not ES2022, whose private-fields/static-block
 syntax isn't all safely downlevelable) and `lib: ["ES2017"]` with no `"DOM"`, so those
-globals have **no ambient type declarations** in that branch's type-checking — calling
-one is a compile error, not a silent Node-8 crash. This is the direct equivalent of
-Java's `animal-sniffer` check (`java/CLAUDE.md` §12) — never remove it to make a change
+globals have **no ambient type declarations** during that variant's build — calling one
+is a compile error, not a silent Node-8 crash. This is the direct equivalent of Java's
+`animal-sniffer` check (`java/CLAUDE.md` §12) — never remove it to make a change
 compile; a build succeeding on a newer Node dev machine proves nothing about actual
 Node 8 runtime compatibility.
 
-The pinned `@types/node` version on `release/1.x` matters precisely: `@types/node@8.10.66`
-and `@types/node@10.17.60` (the last published patches of those lines) **fail to
-compile at all** under a current TypeScript compiler — DefinitelyTyped never backported
-a later `Uint8Array`-generics compatibility fix to those frozen lines, so `Buffer`'s
-declaration conflicts with `lib.es2017.d.ts`'s `Uint8Array` regardless of anything this
-SDK does. `@types/node@14.18.63` compiles fine but already declares a global
-`AbortController` (a real Node 15+ API) — DefinitelyTyped had folded that global into
-every still-maintained major's latest patch by the time it shipped, so it doesn't
+One extra piece the single-branch layout requires that two separate branches didn't:
+each variant's `tsconfig.json` **excludes the other variant's transport source file**
+(`"exclude": ["src/internal/transport.modern.ts"]` in the legacy config, and the mirror
+in the modern one). Without this, `tsc`'s `"include": ["src/**/*"]` glob picks up both
+`transport.legacy.ts` and `transport.modern.ts` regardless of which one is actually
+being built, so building "legacy" would fail to compile "modern"'s `fetch()` call even
+though nothing imports it for that build — caught by testing this exact scenario before
+trusting the design.
+
+The pinned `@types/node` version on the legacy variant matters precisely:
+`@types/node@8.10.66` and `@types/node@10.17.60` (the last published patches of those
+lines) **fail to compile at all** under a current TypeScript compiler — DefinitelyTyped
+never backported a later `Uint8Array`-generics compatibility fix to those frozen lines,
+so `Buffer`'s declaration conflicts with `lib.es2017.d.ts`'s `Uint8Array` regardless of
+anything this SDK does. `@types/node@14.18.63` compiles fine but already declares a
+global `AbortController` (a real Node 15+ API) — DefinitelyTyped had folded that global
+into every still-maintained major's latest patch by the time it shipped, so it doesn't
 enforce the Node 8–14 boundary despite compiling. **`@types/node@12.20.55`** (pinned to
 its own last published patch) is the version that actually enforces the boundary: it
 compiles cleanly under TypeScript 5.5, and correctly fails to compile a `fetch(...)` or
-`new AbortController()` call anywhere under `src/internal/transport.ts` with `Cannot
-find name` — the guardrail blocks both, not just one.
+`new AbortController()` call anywhere in the legacy transport source with `Cannot find
+name` — the guardrail blocks both, not just one.
 
-`feat/node-sdk` uses `target: "ES2022"`, `lib: ["ES2022"]` (still no `"DOM"` — `fetch`/
-`AbortSignal` types come from a Node-18-era `@types/node`). Both majors keep `module:
-"CommonJS"` so both stay `main`-resolvable without a dual ESM/CJS build.
+The modern variant uses `target: "ES2022"`, `lib: ["ES2022"]` (still no `"DOM"` —
+`fetch`/`AbortSignal` types come from a Node-18-era `@types/node`). Both variants keep
+`module: "CommonJS"` so both stay `main`-resolvable without a dual ESM/CJS build.
 
 ## 5. Documented divergences from the Java SDK
 
@@ -134,14 +150,15 @@ differences from Java, each decided explicitly rather than left as an accident:
   observation hook invoked synchronously from inside the same catch-everything path;
   supplying them (or not) never changes the never-throws guarantee. Java's
   `postAsync()` has no equivalent — it only logs.
-- **No enforceable connection-pool cap on the `fetch`-based major.** Java bounds
-  concurrent connections to 20 via `PoolingHttpClientConnectionManager`. Node's global
-  `fetch` (undici-backed) exposes no public, dependency-free way to cap concurrent
-  connections without adding `undici` as an explicit dependency — which would break
-  "fetch only, zero runtime deps." `release/1.x`'s `http`/`https` transport does mirror
-  Java's pool sizing via `new https.Agent({ keepAlive: true, maxSockets: 20 })`.
+- **No enforceable connection-pool cap on the modern (`fetch`-based) variant.** Java
+  bounds concurrent connections to 20 via `PoolingHttpClientConnectionManager`. Node's
+  global `fetch` (undici-backed) exposes no public, dependency-free way to cap
+  concurrent connections without adding `undici` as an explicit dependency — which
+  would break "fetch only, zero runtime deps." The legacy variant's `http`/`https`
+  transport does mirror Java's pool sizing via `new https.Agent({ keepAlive: true,
+  maxSockets: 20 })`.
 - **`ATTEMPT_TIMEOUT_MS = 8000`** collapses Java's separate 3s-connect/5s-socket
-  timeouts into one attempt deadline in both majors — retry classification doesn't
+  timeouts into one attempt deadline in both variants — retry classification doesn't
   depend on the split, only latency shape does.
 - **Retryable-status classification matches Java's precise list**, not "any 5xx": 429,
   500, 502, 503, 504 retryable; 400, 401, 403, 404, 409, 422 explicitly non-retryable;
@@ -174,31 +191,51 @@ differences from Java, each decided explicitly rather than left as an accident:
 
 ```text
 node/
-├── CLAUDE.md  README.md  LICENSE  package.json  tsconfig.json  .gitignore
+├── CLAUDE.md  README.md  LICENSE  .gitignore
+├── package.json  package-lock.json  tsconfig.json    # GENERATED — gitignored, never
+│                                                        the source of truth (see below)
 ├── scripts/
-│   └── sync-release-1x.sh          # byte-identical across majors — see §8
+│   ├── build-variant.sh <legacy|modern>    # stage + install + build + full test suite
+│   └── release.sh <legacy-ver|-> <modern-ver|->
+├── variants/
+│   ├── legacy/       package.json, package-lock.json, tsconfig.json (Node >=8 floor)
+│   └── modern/       package.json, package-lock.json, tsconfig.json (Node >=18 floor)
 ├── src/
-│   ├── index.ts                    # public exports only: IncidentClient, Severity, types
-│   ├── IncidentClient.ts           # façade — byte-identical across majors
-│   ├── constants.ts                # byte-identical across majors
-│   ├── model/                      # Severity, IncidentRequest, IncidentResponse, errors — byte-identical
+│   ├── index.ts                          # public exports only: IncidentClient, Severity, types
+│   ├── IncidentClient.ts                 # façade — one copy, shared by both variants
+│   ├── constants.ts
+│   ├── model/                            # Severity, IncidentRequest, IncidentResponse, errors
 │   └── internal/
-│       ├── retry/RetryExecutor.ts          # byte-identical
-│       ├── async/{AsyncDispatcher,RateLimitedDropLogger}.ts   # byte-identical
-│       ├── wire/wireCodec.ts               # byte-identical
-│       ├── http/retryableStatus.ts         # byte-identical
-│       └── transport.ts                    # *** the only file that differs per major ***
+│       ├── retry/RetryExecutor.ts
+│       ├── async/{AsyncDispatcher,RateLimitedDropLogger}.ts
+│       ├── wire/wireCodec.ts
+│       ├── http/retryableStatus.ts
+│       ├── transport.legacy.ts           # committed source for the legacy variant
+│       ├── transport.modern.ts           # committed source for the modern variant
+│       └── transport.ts                  # GENERATED by build-variant.sh — whichever
+│                                            variant ran last is what's staged here
 └── test/
-    ├── smoke.js                    # network-free, plain CommonJS, Node-8-safe — the CI gate
-    ├── model/                      # pure unit tests
-    └── internal/                   # unit + local-loopback-server integration tests, byte-identical
+    ├── smoke.js                          # network-free, plain CommonJS, Node-8-safe — the CI gate
+    ├── model/                            # pure unit tests
+    └── internal/                         # unit + local-loopback-server integration tests
 ```
 
-## 7. Verification
+`transport.legacy.ts` and `transport.modern.ts` live directly under `src/internal/`, at
+the same depth as the staged `transport.ts` target — not nested a level deeper —
+specifically so their relative imports (`../constants`) resolve identically whether
+read from their own filename or after being copied into place.
+
+## 7. Building and testing
 
 ```shell
-npm install
-npm run build
+node/scripts/build-variant.sh legacy    # or modern
+```
+
+This stages that variant's `package.json`/`package-lock.json`/`tsconfig.json`/
+`transport.ts` into their canonical top-level locations, then runs `npm install`,
+`npm run build`, and the full test suite:
+
+```shell
 node test/smoke.js
 node test/model/incidentRequest.test.js
 node test/internal/wireCodec.test.js
@@ -208,81 +245,76 @@ node test/internal/transport.test.js
 node test/IncidentClient.test.js
 ```
 
-`test/smoke.js` must also pass when actually run under Node 8 — this is what the
-`node-compatibility.yml` CI matrix checks per branch; it is deliberately
+`test/smoke.js` must also pass when actually run under Node 8 — this is what
+`node-compatibility.yml`'s CI matrix checks per variant; it is deliberately
 network-free (mirrors `.github/smoke/java/ExternalConsumer.java`) and written in plain,
-conservative CommonJS so it needs no compilation step of its own and stays shared,
-byte-identical, across both branches.
+conservative CommonJS so it needs no compilation step of its own.
 
-To confirm the Node-8 guardrail is real, not just present in config: on `release/1.x`,
-temporarily add a `fetch(...)` call anywhere under `src/`, run `npm run build`, and
-confirm it fails to compile. Revert before committing.
+A fresh clone has no top-level `package.json`/`tsconfig.json` until you run
+`build-variant.sh` once — they're generated, not committed. Run
+`node/scripts/build-variant.sh modern` right after cloning to get a normal local dev
+setup (editor/IDE support, etc.); switch to `legacy` any time you need to verify that
+variant specifically.
 
-## 8. Keeping the two branches in sync
+To confirm the Node-8 guardrail is real, not just present in config: temporarily add a
+`fetch(...)` call to `src/internal/transport.legacy.ts`, run `build-variant.sh legacy`,
+and confirm it fails to compile. Revert before committing.
 
-Nothing about git or npm automatically keeps the "must stay byte-identical" files
-identical across `release/1.x` and `feat/node-sdk` — that has to be enforced
-deliberately. `node/scripts/sync-release-1x.sh` does this:
+## 8. Cutting a release
 
-```shell
-node/scripts/sync-release-1x.sh check   # reports drift, exits 1 if any is found
-node/scripts/sync-release-1x.sh sync    # copies feat/node-sdk's shared files onto
-                                         # release/1.x, rebuilds, runs the full test
-                                         # suite, and commits only if it passes
-```
-
-`check` runs in CI on every push (see `node-compatibility.yml`'s `sync-check`
-job), so a shared-file edit made on only one branch is caught within minutes, not
-whenever someone eventually hits a bug that only reproduces on one branch. `sync` is a
-local, manual step — after changing any shared file on `feat/node-sdk`, run it to
-propagate the change onto `release/1.x` before pushing either branch. It refuses to run
-against a dirty working tree, and refuses to commit if the rebuilt, resynced
-`release/1.x` fails its own test suite.
-
-This script is itself one of the files that must stay byte-identical between branches —
-if you change it, apply the same change to both.
-
-## 9. Cutting a release
-
-`node/scripts/release.sh <release/1.x-version|-> <feat/node-sdk-version|->` releases
-either or both majors in one invocation, from whichever branch happens to be checked
-out — it checks out each target branch itself (creating it locally from
-`origin/<branch>` first if needed), so you don't need to `git checkout` either release
-branch yourself beforehand:
+`node/scripts/release.sh <legacy-version|-> <modern-version|->` releases either or both
+variants in one invocation, **on the current branch — in practice, always `master`,
+the only long-lived branch this SDK has.** No branch switching happens:
 
 ```shell
 node/scripts/release.sh 1.0.1 2.1.0   # release both
-node/scripts/release.sh 1.0.1 -       # release only release/1.x; "-" skips a branch
+node/scripts/release.sh 1.0.1 -       # "-" skips a variant
 ```
 
-For each branch being released, it bumps `node/package.json`'s version, rebuilds, runs
-the full test suite, and only then commits + tags — it never pushes and never runs
-`npm publish`, so a version cut is never silently made public. It refuses a dirty
-working tree (checked once, up front, before touching either branch), a version that
-isn't a plain `X.Y.Z` semver, a version that isn't strictly newer than that branch's
-current one, an already-existing tag, or a failing test run — and stops immediately,
-before touching the second branch, if the first branch's release fails for any reason.
-It always returns to whichever branch was checked out when the script started,
-regardless of outcome. Tags are language-qualified (`node-vX.Y.Z`), per root
-`CLAUDE.md`'s rule that workflow, artifact, and tag names must be language-qualified so
-they can't collide with a future Python or Go SDK's own version tags.
+For each variant released, in order:
 
-After it finishes, it prints the exact push/publish commands for whichever branches
-were released — but running them stays a deliberate, separate, manual step. This
-includes one non-obvious but important detail: **a `release/1.x` publish must always
-use `npm publish --tag legacy`**, never bare `npm publish`. Without it, npm's `latest`
-dist-tag tracks *most recently published*, not *highest version* — publishing a 1.x
-patch after 2.x is already out would silently move `latest` backward, so a bare
-`npm install @oppex/integration-sdk` (no version specified) would install the older
-major. Only a `feat/node-sdk` publish should ever go to bare `latest`.
+1. Bump `node/variants/<variant>/package.json`'s version
+2. Build + test that variant (`build-variant.sh <variant>`) — *before* committing, so a
+   bad bump never lands
+3. Copy the resulting, version-synced `package-lock.json` back to
+   `node/variants/<variant>/package-lock.json` (`npm install` updates the *staged*,
+   gitignored lockfile's own version field automatically; without this copy-back step
+   that update would be silently lost)
+4. Commit the bump directly on the current branch
+5. Create `node-release-<version>` as a branch pointing at that exact commit —
+   deliberately a plain `git branch`, no checkout. This is a **snapshot taken after the
+   bump**, not something `master` needs to catch up to later; there is no "merge the
+   release branch back" step, because master was never behind it.
 
-There is no automated guard preventing `release/1.x` from being released into the
-`2.x.x` (or higher) range that semantically belongs to `feat/node-sdk`'s lineage — the
-script only checks "newer than this branch's own current version," not "does this
-number belong to the other branch." That discipline is manual.
+It refuses a dirty working tree (checked once, up front), a version that isn't a plain
+`X.Y.Z` semver, a version that isn't strictly newer than that variant's current one, an
+already-existing release branch, or a failing test run — and stops immediately, before
+touching the second variant, if the first one's release fails for any reason. Branch
+names are language-qualified (`node-release-X.Y.Z`), per root `CLAUDE.md`'s rule that
+workflow, artifact, and branch/tag names must be language-qualified so they can't
+collide with a future Python or Go SDK's own version markers.
+
+After it finishes, it prints the exact push/publish commands — running them stays a
+deliberate, separate, manual step:
+
+```shell
+git push origin master
+git push origin node-release-1.0.1
+git checkout node-release-1.0.1 && (cd node && ./scripts/build-variant.sh legacy && npm publish --tag legacy)
+```
+
+One non-obvious but important detail baked into that printed guidance: **a legacy
+publish must always use `npm publish --tag legacy`**, never bare `npm publish`. Without
+it, npm's `latest` dist-tag tracks *most recently published*, not *highest version* —
+publishing a 1.x patch after 2.x is already out would silently move `latest` backward,
+so a bare `npm install @oppex/integration-sdk` (no version specified) would install the
+older major. Only a modern-variant publish should ever go to bare `latest`.
+
+There is no automated guard preventing a legacy release from being given a version in
+the `2.x.x` (or higher) range that semantically belongs to the modern variant's
+lineage — `release.sh` only checks "newer than this variant's own current version," not
+"does this number belong to the other variant." That discipline is manual.
 
 A failed release attempt leaves a dirty working tree by design (the version bump is
-written to disk before the test suite runs) — `git checkout -- node/package.json
-node/package-lock.json` before retrying.
-
-This script is also one of the files that must stay byte-identical between branches.
+written to disk before the test suite runs) — `git checkout -- node/variants/<variant>/
+package.json` before retrying.
