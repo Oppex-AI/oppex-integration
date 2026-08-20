@@ -264,6 +264,16 @@ To confirm the Node-8 guardrail is real, not just present in config: temporarily
 `fetch(...)` call to `src/internal/transport.legacy.ts`, run `build-variant.sh legacy`,
 and confirm it fails to compile. Revert before committing.
 
+This check used to also run automatically in CI, deliberately mutating the source to
+prove it fails — removed after that step turned out to have its own real bug: `tsc`
+still writes JS output even when it reports a type error (`noEmitOnError` isn't set),
+so the step's own `dist/` ended up corrupted with the injected `fetch()` call, and the
+step never rebuilt afterward, so every following step (pack, install, run) reused that
+broken output. Rather than patching a fragile "mutate the source and expect a failure"
+mechanism, the guardrail is verified manually (as above) and otherwise trusted to the
+structural guarantee it's actually built on — `lib: ["ES2017"]` with no ambient
+`fetch`/`AbortController` declarations, not a runtime test of it.
+
 ## 8. Cutting a release
 
 `node/scripts/release.sh <legacy-version|-> <modern-version|->` releases either or both

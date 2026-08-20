@@ -65,21 +65,6 @@ jobs:
         shell: bash
         run: node/scripts/build-variant.sh ${{ matrix.variant }}
 
-      - name: Verify the Node-8 compile-time guardrail
-        if: matrix.variant == 'legacy'
-        shell: bash
-        working-directory: node
-        run: |
-          set -euo pipefail
-          cp src/internal/transport.legacy.ts "${RUNNER_TEMP}/transport.legacy.ts.bak"
-          printf '\nfetch("https://example.com");\n' >> src/internal/transport.legacy.ts
-          if ./scripts/build-variant.sh legacy; then
-            echo "legacy must fail to compile when its transport source calls fetch() directly" >&2
-            cp "${RUNNER_TEMP}/transport.legacy.ts.bak" src/internal/transport.legacy.ts
-            exit 1
-          fi
-          cp "${RUNNER_TEMP}/transport.legacy.ts.bak" src/internal/transport.legacy.ts
-
       - name: Pack tarball
         shell: bash
         working-directory: node
