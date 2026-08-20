@@ -18,7 +18,7 @@ export type Task = () => Promise<void>;
 export class AsyncDispatcher {
   private active = 0;
   private closed = false;
-  private queue: Task[] = [];
+  private queue: Array<Task | undefined> = [];
   private queueHead = 0;
   private idleWaiters: Array<() => void> = [];
   private readonly dropLogger: RateLimitedDropLogger;
@@ -40,7 +40,7 @@ export class AsyncDispatcher {
       return undefined;
     }
     const task = this.queue[this.queueHead];
-    this.queue[this.queueHead] = undefined as unknown as Task; // release the reference for GC
+    this.queue[this.queueHead] = undefined; // release the reference for GC
     this.queueHead++;
     if (this.queueHead >= this.queue.length) {
       // Fully drained — reset rather than carry dead space forward indefinitely.
@@ -56,7 +56,7 @@ export class AsyncDispatcher {
   }
 
   private dropOldest(): void {
-    this.queue[this.queueHead] = undefined as unknown as Task;
+    this.queue[this.queueHead] = undefined;
     this.queueHead++;
     this.dropLogger.recordDrop();
   }
