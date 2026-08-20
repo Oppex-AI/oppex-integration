@@ -2,8 +2,11 @@ name: Java compatibility
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -13,35 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  library-fat-jar:
-    name: Build and import library on Java ${{ matrix.java }}
+  canonical-java-7-library:
+    name: Build canonical library on Java 7
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        java:
-          - "7"
-          - "8"
-          - "11"
-          - "17"
-          - "21"
-          - "25"
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up Azul Zulu JDK ${{ matrix.java }}
+      - name: Set up Azul Zulu JDK 7
         uses: actions/setup-java@v5
         with:
           distribution: zulu
-          java-version: ${{ matrix.java }}
+          java-version: "7"
           java-package: jdk
           cache: maven
 
       - name: Install Maven 3.8.9 for Java 7
-        if: matrix.java == '7'
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +56,22 @@ jobs:
           tar --extract --gzip --file "${archive_name}"
           echo "${RUNNER_TEMP}/apache-maven-${maven_version}/bin" >> "${GITHUB_PATH}"
 
+      - name: Use release version for a Java release tag
+        if: startsWith(github.ref, 'refs/tags/java-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^java-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as java-v1.0.0" >&2
+            exit 1
+          fi
+          mvn --batch-mode --no-transfer-progress \
+            --file java/pom.xml \
+            org.codehaus.mojo:versions-maven-plugin:2.8.1:set \
+            -DnewVersion="${BASH_REMATCH[1]}" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+
       - name: Show tool versions
         shell: bash
         run: |
@@ -77,6 +85,7 @@ jobs:
         run: >-
           mvn --batch-mode --no-transfer-progress
           --file java/pom.xml
+          --activate-profiles java-7-build
           -pl sdk-bundle -am verify
 
       - name: Locate bundled library
@@ -87,6 +96,7 @@ jobs:
           fat_jars=(java/sdk-bundle/target/oppex-integration-sdk-*.jar)
           test "${#fat_jars[@]}" -eq 1
           echo "FAT_JAR=${fat_jars[0]}" >> "${GITHUB_ENV}"
+          echo "FAT_JAR_SHA256=${fat_jars[0]}.sha256" >> "${GITHUB_ENV}"
 
       - name: Verify Java 7 SDK bytecode
         shell: bash
@@ -121,10 +131,80 @@ jobs:
           grep --fixed-strings "EXTERNAL_CONSUMER_OK" \
             "${RUNNER_TEMP}/external-consumer-output.txt"
 
-      - name: Upload fat JAR
+      - name: Record canonical JAR checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_directory="$(dirname "${FAT_JAR}")"
+          artifact_name="$(basename "${FAT_JAR}")"
+          cd "${artifact_directory}"
+          sha256sum "${artifact_name}" > "${artifact_name}.sha256"
+
+      - name: Upload canonical Java 7 JAR
         uses: actions/upload-artifact@v7
         with:
-          name: oppex-integration-sdk-java-${{ matrix.java }}
-          path: java/sdk-bundle/target/oppex-integration-sdk-*.jar
+          name: oppex-integration-sdk-canonical-java7
+          path: |
+            ${{ env.FAT_JAR }}
+            ${{ env.FAT_JAR_SHA256 }}
           if-no-files-found: error
           retention-days: 7
+
+  runtime-compatibility:
+    name: Run canonical JAR on Java ${{ matrix.java }}
+    needs: canonical-java-7-library
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+          - "7"
+          - "8"
+          - "11"
+          - "17"
+          - "21"
+          - "25"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Azul Zulu JDK ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: ${{ matrix.java }}
+          java-package: jdk
+
+      - name: Download canonical Java 7 JAR
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-java7
+          path: ${{ runner.temp }}/canonical-java7
+
+      - name: Verify canonical JAR checksum and contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-java7"
+          sha256sum --check ./*.sha256
+          fat_jars=(*.jar)
+          test "${#fat_jars[@]}" -eq 1
+          echo "FAT_JAR=${RUNNER_TEMP}/canonical-java7/${fat_jars[0]}" >> "${GITHUB_ENV}"
+          jar tf "${fat_jars[0]}" | grep --fixed-strings "dev/oppex/sdk/api/IncidentClient.class"
+          jar tf "${fat_jars[0]}" | grep --fixed-strings "org/apache/http/impl/client/CloseableHttpClient.class"
+          javap -verbose -classpath "${fat_jars[0]}" dev.oppex.sdk.api.IncidentClient \
+            | grep --fixed-strings "major version: 51"
+
+      - name: Compile and run an external consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_classes="${RUNNER_TEMP}/external-consumer"
+          mkdir -p "${consumer_classes}"
+          javac -cp "${FAT_JAR}" -d "${consumer_classes}" .github/smoke/java/ExternalConsumer.java
+          java -cp "${FAT_JAR}:${consumer_classes}" ExternalConsumer \
+            | tee "${RUNNER_TEMP}/external-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" \
+            "${RUNNER_TEMP}/external-consumer-output.txt"

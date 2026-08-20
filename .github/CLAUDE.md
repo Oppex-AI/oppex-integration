@@ -15,5 +15,15 @@ This directory contains repository automation and consumer smoke sources. It is 
 - `.github/smoke/java` sources use only supported SDK API and Java 7 language syntax.
 - Workflow files stay at repository root, but language-specific commands and artifacts must be explicitly scoped to their peer language directory.
 - Do not hide a failing matrix entry with `continue-on-error`.
+- Java Central releases use stable `java-vX.Y.Z` tags and must pass the complete
+  Java compatibility workflow before publishing.
+- Keep Central Portal and GPG credentials in the protected `maven-central`
+  GitHub environment. Never echo, persist, upload, or pass them as command-line
+  arguments.
+- Maven Central receives one Java 7-compatible release, not one classifier per
+  tested JDK. Build the canonical JAR once on Java 7, checksum it, and run those
+  exact bytes on every supported JDK. The publishing job may generate metadata
+  on a newer JDK, but it must restore, compare, sign, and deploy the canonical
+  Java 7 JAR without changing it.
 
 GitHub CLI commands require this directory to be inside a Git repository with a configured GitHub remote.
