@@ -88,8 +88,7 @@ error-handling idioms, or internal knobs. These are the deliberate, disclosed
 differences from Java, each decided explicitly rather than left as an accident:
 
 - **3 retries, not 5** (`[500, 1000, 2000]` ms vs. Java's `[500,1000,2000,4000,8000]`) —
-  same doubling shape, truncated to the first three terms at the user's explicitly
-  lower count.
+  same doubling shape, a lower total retry budget by design.
 - **No jitter** — this one actually *matches* Java, which documents fixed, jitter-free
   delays as an intentional V1 choice.
 - **Retry/timeout constants are fixed internals, not public config** — no

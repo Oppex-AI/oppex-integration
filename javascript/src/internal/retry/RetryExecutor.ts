@@ -5,8 +5,8 @@ export type Sleep = (ms: number) => Promise<void>;
 const defaultSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Pure retry loop, zero Node API. 3 retries (4 attempts total), fixed delays, no
- * jitter — matches java/CLAUDE.md's documented jitter-free behavior exactly, just at
- * the user's explicitly lower retry count. Not exposed as public config. Individual
+ * jitter — matches java/CLAUDE.md's documented jitter-free behavior, at a lower total
+ * retry budget than Java's five. Not exposed as public config. Individual
  * retry attempts are never logged (matches java/CLAUDE.md §10: "not separately for
  * each attempt") — only the final failure, if any, is annotated with an attempt count,
  * and only for a network-level failure, per withAttemptCountIfNetworkFailure below. */
