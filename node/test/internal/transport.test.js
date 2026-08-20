@@ -5,7 +5,7 @@ var path = require('path');
 var http = require('http');
 
 var transport = require(path.join(__dirname, '..', '..', 'dist', 'internal', 'transport.js'));
-var sendRequest = transport.sendRequest;
+var sendRequest = transport.createTransport().sendRequest;
 
 function startServer(handler) {
   return new Promise(function (resolve) {
@@ -51,6 +51,21 @@ async function main() {
     rejected = true;
   }
   assert.ok(rejected, 'a connection failure must reject, for the caller to classify');
+
+  // Isolation: closing one transport instance must never affect a different instance's
+  // ability to make requests — this is the exact scenario the shared-agent-pool bug
+  // (module-level singletons) would have broken.
+  var server3 = await startServer(function (req, res) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, code: 200 }));
+  });
+  var transportA = transport.createTransport();
+  var transportB = transport.createTransport();
+  transportA.closeTransport();
+  var res3 = await transportB.sendRequest(urlOf(server3), '{}', {});
+  assert.strictEqual(res3.statusCode, 200, "closing transportA must not break transportB's requests");
+  transportB.closeTransport();
+  server3.close();
 
   console.log('transport.test.js OK');
 }

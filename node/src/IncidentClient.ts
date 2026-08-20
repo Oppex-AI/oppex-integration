@@ -6,7 +6,7 @@ import { executeWithRetry } from './internal/retry/RetryExecutor';
 import { AsyncDispatcher } from './internal/async/AsyncDispatcher';
 import { serializeRequest, parseResponse } from './internal/wire/wireCodec';
 import { isRetryableStatus } from './internal/http/retryableStatus';
-import { sendRequest, closeTransport } from './internal/transport';
+import { createTransport } from './internal/transport';
 
 export interface IncidentClientOptions {
   apiKey: string;
@@ -62,6 +62,10 @@ export class IncidentClient {
   private readonly serviceKey: string;
   private readonly tenant: string;
   private readonly dispatcher = new AsyncDispatcher();
+  // Each client gets its own transport instance — a shared, module-level pool would
+  // mean one client's close() destroys sockets a different, still-active client is
+  // using (see node/CLAUDE.md's documented divergences).
+  private readonly transport = createTransport();
   private closed = false;
 
   constructor(options: IncidentClientOptions) {
@@ -159,7 +163,7 @@ export class IncidentClient {
     }
     this.closed = true;
     await this.dispatcher.close(CLOSE_DRAIN_TIMEOUT_MS);
-    closeTransport();
+    this.transport.closeTransport();
   }
 
   private async deliver(request: IncidentRequest): Promise<IncidentResponse> {
@@ -177,7 +181,7 @@ export class IncidentClient {
         async () => {
           let response;
           try {
-            response = await sendRequest(ENDPOINT_URL, payload, headers);
+            response = await this.transport.sendRequest(ENDPOINT_URL, payload, headers);
           } catch (networkErr) {
             const failure: DeliveryFailure = { retryable: true, code: -1, message: describeError(networkErr) };
             throw failure;
