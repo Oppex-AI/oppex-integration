@@ -332,3 +332,28 @@ lineage — `release.sh` only checks "newer than this variant's own current vers
 A failed release attempt leaves a dirty working tree by design (the version bump is
 written to disk before the test suite runs) — `git checkout -- node/variants/<variant>/
 package.json` before retrying.
+
+## 9. `close()` and `CLOSE_DRAIN_TIMEOUT_MS`
+
+`IncidentClient.close()` stops accepting new `sendIncidentAsync` work, lets
+`AsyncDispatcher` keep draining whatever is already in flight or queued, then
+force-drops anything still left once `CLOSE_DRAIN_TIMEOUT_MS` (10s) elapses.
+
+That 10s figure is a deliberate, bounded-loss tradeoff, not a placeholder waiting to be
+tuned upward. It is sized to fit inside Docker's default 10s container stop grace
+period and leave headroom under Kubernetes' default 30s
+`terminationGracePeriodSeconds` — the two most common environments this SDK actually
+shuts down inside. Raising it to try to cover a worst-case retry chain (up to three
+retries at up to 8s each) is counterproductive: the orchestrator SIGKILLs the process
+at *its own* grace-period boundary regardless of what this constant says, so a longer
+drain timeout just spends more of that same fixed window waiting instead of draining —
+it does not create a higher chance of finishing. Some bounded incident loss during
+shutdown is an accepted, deliberate cost of this design, not a defect to eliminate.
+
+Calling `close()` at all is optional, not required for correctness. If nothing ever
+calls it — an abrupt process exit, a crash, a `SIGKILL` — whatever is in flight or
+queued is simply dropped immediately, the same default behavior as any other
+unflushed in-memory client (e.g. a database connection pool that nobody explicitly
+closed). `close()` exists to make an *orderly* shutdown better (drain what you can,
+within a bound that respects the host's own grace period), not to make the *absence*
+of one worse than it already would be.
