@@ -18,6 +18,7 @@ import java.nio.charset.Charset;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -55,11 +56,12 @@ public class HttpExecutorTest {
         server.start();
         HttpExecutor executor = new HttpExecutor("secret", endpoint);
         try {
-            IncidentResponse response = executor.execute(request(), "service-key", "tenant");
+            IncidentResponse response = executor.execute(request(), "service-key");
             assertTrue(response.isSuccessful());
             assertEquals("inc-1", response.getIncidentId());
             assertEquals("secret", apiKey.get());
             assertTrue(requestBody.get().contains("\"serviceKey\":\"service-key\""));
+            assertFalse(requestBody.get().contains("\"tenant\""));
         } finally {
             executor.close();
         }
@@ -71,7 +73,7 @@ public class HttpExecutorTest {
         server.start();
         HttpExecutor executor = new HttpExecutor("secret", endpoint);
         try {
-            executor.execute(request(), "service-key", "tenant");
+            executor.execute(request(), "service-key");
             fail("Expected IncidentException");
         } catch (IncidentException expected) {
             assertEquals(503, expected.getStatusCode());
@@ -88,7 +90,7 @@ public class HttpExecutorTest {
         server.start();
         HttpExecutor executor = new HttpExecutor("secret", endpoint);
         try {
-            executor.execute(request(), "service-key", "tenant");
+            executor.execute(request(), "service-key");
             fail("Expected IncidentException");
         } catch (IncidentException expected) {
             assertEquals(422, expected.getStatusCode());

@@ -20,7 +20,6 @@ The expected client setup is:
 IncidentClient client = IncidentClient.builder()
         .apiKey("api-key")
         .serviceKey("service-key")
-        .tenant("tenant")
         .build();
 ```
 
@@ -187,7 +186,7 @@ Generated `target/` directories are ignored and must not be committed. IDE metad
 - No setters.
 - Constructed only with its nested builder.
 - Strings are safe to share because `String` is immutable.
-- Client-level `serviceKey` and `tenant` can be overridden on an individual request.
+- Client-level `serviceKey` can be overridden on an individual request.
 - `srcTimestamp` defaults to `System.currentTimeMillis()` at build time.
 - `priority` defaults to 1.
 
@@ -201,7 +200,6 @@ Validation performed by `build()`:
 | `priority` | Between 1 and 5 |
 | `srcTimestamp` | Greater than zero when supplied |
 | `serviceKey` | Optional request override; non-blank when supplied |
-| `tenant` | Optional request override; non-blank when supplied |
 | `component` | Optional; non-blank when supplied |
 | `group` | Optional; non-blank when supplied |
 | `type` | Optional; non-blank when supplied |
@@ -235,9 +233,11 @@ The minimal required client configuration is:
 
 - `apiKey`
 - `serviceKey`
-- `tenant`
 
-All three are validated as non-null and non-blank during `build()`. Do not add timeout, queue, executor, proxy, serializer, connection-pool, or retry knobs to the V1 public builder without an explicit product/API decision.
+Both values are validated as non-null and non-blank during `build()`. Tenant is
+not a separate input and is not sent on the wire. Do not add timeout, queue,
+executor, proxy, serializer, connection-pool, or retry knobs to the V1 public
+builder without an explicit product/API decision.
 
 #### `IncidentClient`
 
@@ -254,7 +254,7 @@ All three are validated as non-null and non-blank during `build()`. Do not add t
 - Calling `postAsync()` after close produces `IllegalStateException`.
 - Passing a null request produces `IllegalArgumentException`.
 
-The public three-string constructor exists for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
+The public two-string constructor exists for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
 
 ### 5.3 `sdk-bundle`
 
@@ -286,7 +286,6 @@ Wire fields:
   "severity": 2,
   "priority": 1,
   "srcTimestamp": 1787036524808,
-  "tenant": "tenant",
   "component": "deploy",
   "group": "backend",
   "type": "deployment",
@@ -294,7 +293,9 @@ Wire fields:
 }
 ```
 
-Optional fields are omitted when absent. Request-level `serviceKey` and `tenant` take precedence over client defaults.
+Optional fields are omitted when absent. A request-level `serviceKey` takes
+precedence over the client default. There is no tenant configuration or tenant
+wire field; the API key and service key provide the required routing context.
 
 The pool is configured with:
 

@@ -96,7 +96,6 @@ import dev.oppex.sdk.model.Severity;
 IncidentClient client = IncidentClient.builder()
         .apiKey("your-api-key")
         .serviceKey("service-key")
-        .tenant("tenant")
         .build();
 
 try {
@@ -116,6 +115,9 @@ try {
     client.close();
 }
 ```
+
+Only the API key and service key are required. The SDK does not accept or send
+a separate tenant value.
 
 `post` performs delivery and retries on the caller thread. `postAsync` uses two daemon workers and a bounded queue of 5,000 items. If that queue fills, the oldest queued incident is dropped so the newest incident can be accepted.
 

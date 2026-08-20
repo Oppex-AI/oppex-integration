@@ -14,6 +14,10 @@ Read the repository-level [`../CLAUDE.md`](../CLAUDE.md) first. This file adds r
 - Bounded asynchronous delivery
 - Internal counters and drop logging
 
+The public client requires exactly two credentials: `apiKey` and `serviceKey`.
+Tenant is not a separate configuration value and must not be emitted in the
+incident JSON payload.
+
 The `sdk-bundle` module packages this module and all runtime dependencies into the distributable `oppex-integration-sdk` library JAR. Keep shading concerns out of `sdk-http`.
 
 ## Dependency rules

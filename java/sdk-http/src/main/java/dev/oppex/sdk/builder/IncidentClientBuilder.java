@@ -6,7 +6,6 @@ import dev.oppex.sdk.api.IncidentClient;
 public final class IncidentClientBuilder {
     private String apiKey;
     private String serviceKey;
-    private String tenant;
 
     public IncidentClientBuilder() {
     }
@@ -21,16 +20,10 @@ public final class IncidentClientBuilder {
         return this;
     }
 
-    public IncidentClientBuilder tenant(String tenant) {
-        this.tenant = tenant;
-        return this;
-    }
-
     public IncidentClient build() {
         requireNonBlank(apiKey, "apiKey");
         requireNonBlank(serviceKey, "serviceKey");
-        requireNonBlank(tenant, "tenant");
-        return new IncidentClient(apiKey, serviceKey, tenant);
+        return new IncidentClient(apiKey, serviceKey);
     }
 
     private static void requireNonBlank(String value, String name) {

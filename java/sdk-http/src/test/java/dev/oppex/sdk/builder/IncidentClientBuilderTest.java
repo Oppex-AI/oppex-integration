@@ -11,7 +11,6 @@ public class IncidentClientBuilderTest {
         IncidentClient client = IncidentClient.builder()
                 .apiKey("api-key")
                 .serviceKey("service-key")
-                .tenant("tenant")
                 .build();
         try {
             assertNotNull(client);
@@ -22,17 +21,16 @@ public class IncidentClientBuilderTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void rejectsMissingApiKey() {
-        IncidentClient.builder().serviceKey("service-key").tenant("tenant").build();
+        IncidentClient.builder().serviceKey("service-key").build();
     }
 
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankServiceKey() {
-        IncidentClient.builder().apiKey("api-key").serviceKey(" ").tenant("tenant").build();
+        IncidentClient.builder().apiKey("api-key").serviceKey(" ").build();
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void rejectsNullTenant() {
-        IncidentClient.builder().apiKey("api-key").serviceKey("service-key").build();
+    public void rejectsMissingServiceKey() {
+        IncidentClient.builder().apiKey("api-key").build();
     }
 }
-
