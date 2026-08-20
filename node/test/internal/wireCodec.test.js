@@ -61,7 +61,14 @@ assert.strictEqual(empty5xx.successful, false);
 var html = parseResponse(502, '<html><body>Bad Gateway</body></html>');
 assert.strictEqual(html.successful, false);
 assert.strictEqual(html.code, 502);
-assert.ok(html.message.indexOf('Bad Gateway') !== -1);
+
+// parseResponse: a non-JSON body's raw content must never appear in the returned
+// message — a misbehaving proxy/WAF could echo request headers (including
+// X-API-KEY) into a non-JSON error page, and leaking any of that raw text into a log
+// line or response.message would leak the secret into the host application's logs.
+var leaky = parseResponse(502, '<html>X-API-KEY: super-secret-value should never appear</html>');
+assert.strictEqual(leaky.message.indexOf('super-secret-value'), -1, 'raw non-JSON body content must not leak into message');
+assert.strictEqual(leaky.message.indexOf('X-API-KEY'), -1, 'raw non-JSON body content must not leak into message');
 
 // parseResponse: a 2xx with success:false is still returned as a response, not thrown
 var successFalse2xx = parseResponse(200, JSON.stringify({ success: false, code: 200, message: 'business failure' }));

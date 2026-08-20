@@ -1,8 +1,6 @@
 import { IncidentRequest } from '../../model/IncidentRequest';
 import { IncidentResponse } from '../../model/IncidentResponse';
 
-const MAX_MESSAGE_LENGTH = 500;
-
 /** Fixed wire field order: serviceKey, title, source, severity, priority, srcTimestamp,
  * tenant, then optional component, group, type, detailsJSON — each optional key
  * omitted entirely (not sent as null) when unset. Relies on plain-object key insertion
@@ -28,8 +26,13 @@ export function serializeRequest(request: IncidentRequest): string {
 
 /** Parses a response body into an IncidentResponse: defaults for an empty body, reads
  * success/code/message/data. Defensive: a non-JSON body (e.g. an HTML error page from
- * a proxy) must never throw out of this function — falls back to a truncated-raw-text
- * message instead. */
+ * a proxy) must never throw out of this function — falls back to a generic message
+ * instead of the raw body text.
+ *
+ * Deliberately never includes any of the raw body in that fallback message, even
+ * truncated: a misbehaving proxy or WAF can return a non-JSON error/debug page that
+ * echoes request headers, including X-API-KEY — echoing any of that raw text back into
+ * a log line or response.message would leak it into the host application's own logs. */
 export function parseResponse(httpStatus: number, body: string): IncidentResponse {
   const successfulDefault = httpStatus >= 200 && httpStatus < 300;
 
@@ -50,7 +53,11 @@ export function parseResponse(httpStatus: number, body: string): IncidentRespons
       incidentId: typeof obj.data === 'string' ? obj.data : null,
     };
   } catch {
-    const truncated = body.length > MAX_MESSAGE_LENGTH ? `${body.slice(0, MAX_MESSAGE_LENGTH)}…` : body;
-    return { successful: successfulDefault, code: httpStatus, message: truncated, incidentId: null };
+    return {
+      successful: successfulDefault,
+      code: httpStatus,
+      message: `Received a non-JSON response (status ${httpStatus})`,
+      incidentId: null,
+    };
   }
 }
