@@ -5,11 +5,11 @@ export type Sleep = (ms: number) => Promise<void>;
 const defaultSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Pure retry loop, zero Node API. 3 retries (4 attempts total), fixed delays, no
- * jitter — matches java/CLAUDE.md's documented jitter-free behavior, at a lower total
- * retry budget than Java's five. Not exposed as public config. Individual
- * retry attempts are never logged (matches java/CLAUDE.md §10: "not separately for
- * each attempt") — only the final failure, if any, is annotated with an attempt count,
- * and only for a network-level failure, per withAttemptCountIfNetworkFailure below. */
+ * jitter. Not exposed as public config, so every caller gets the same, predictable
+ * retry policy. Individual retry attempts are never logged, to avoid flooding the host
+ * application's logs — only the final failure, if any, is annotated with an attempt
+ * count, and only for a network-level failure, per withAttemptCountIfNetworkFailure
+ * below. */
 export async function executeWithRetry<T>(
   operation: () => Promise<T>,
   isRetryable: (err: unknown) => boolean,
@@ -34,14 +34,12 @@ export async function executeWithRetry<T>(
 }
 
 /**
- * Mirrors java/sdk-http's RetryExecutor exactly, not a blanket "always append
- * attempts" rule: Java's IOException branch appends "...after N attempts" only when a
- * *network-level* failure exhausts retries; its IncidentException branch (an
- * HTTP-status failure, retryable or not) always rethrows the original message
- * unchanged, with no attempt count, even after exhausting retries. This SDK's
- * DeliveryFailure shape uses `code: -1` as the same "no real HTTP response involved"
- * sentinel Java's IncidentException.getStatusCode() documents — so that's the
- * discriminator here too: only a `code: -1` failure gets the count appended.
+ * Appends an attempt count only to a network-level failure (`code: -1`, meaning no
+ * real HTTP response was ever received) once retries exhaust — not a blanket "always
+ * append attempts" rule. An HTTP-status failure (`code !== -1`), retryable or not,
+ * always keeps its original message unchanged, even after exhausting retries: the
+ * status code already tells the caller what happened, and an attempt count there
+ * would just be noise.
  */
 function withAttemptCountIfNetworkFailure(err: unknown, attempts: number): unknown {
   if (

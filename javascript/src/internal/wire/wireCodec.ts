@@ -3,10 +3,10 @@ import { IncidentResponse } from '../../model/IncidentResponse';
 
 const MAX_MESSAGE_LENGTH = 500;
 
-/** Exact wire field order per java/CLAUDE.md: serviceKey, title, source, severity,
- * priority, srcTimestamp, tenant, then optional component, group, type, detailsJSON —
- * each optional key omitted entirely (not sent as null) when unset. Relies on
- * plain-object key insertion order, which JSON.stringify preserves for string keys. */
+/** Fixed wire field order: serviceKey, title, source, severity, priority, srcTimestamp,
+ * tenant, then optional component, group, type, detailsJSON — each optional key
+ * omitted entirely (not sent as null) when unset. Relies on plain-object key insertion
+ * order, which JSON.stringify preserves for string keys. */
 export function serializeRequest(request: IncidentRequest): string {
   const ordered: Record<string, unknown> = {};
 
@@ -26,9 +26,10 @@ export function serializeRequest(request: IncidentRequest): string {
   return JSON.stringify(ordered);
 }
 
-/** Mirrors JsonCodec.parseResponse: defaults for an empty body, reads success/code/
- * message/data. Defensive: a non-JSON body (e.g. an HTML error page from a proxy) must
- * never throw out of this function — falls back to a truncated-raw-text message. */
+/** Parses a response body into an IncidentResponse: defaults for an empty body, reads
+ * success/code/message/data. Defensive: a non-JSON body (e.g. an HTML error page from
+ * a proxy) must never throw out of this function — falls back to a truncated-raw-text
+ * message instead. */
 export function parseResponse(httpStatus: number, body: string): IncidentResponse {
   const successfulDefault = httpStatus >= 200 && httpStatus < 300;
 

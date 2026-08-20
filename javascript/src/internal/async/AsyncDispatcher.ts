@@ -3,11 +3,10 @@ import { RateLimitedDropLogger } from './RateLimitedDropLogger';
 
 export type Task = () => Promise<void>;
 
-/** Node equivalent of Java's AsyncDispatcher. Java bounds concurrency via 2 worker
- * threads pulling from a 5000-capacity ArrayBlockingQueue with a drop-oldest rejection
- * handler; Node has no worker threads, so the property actually being ported is "at
- * most 2 fire-and-forget deliveries in flight at once" — implemented here as a plain
- * concurrency counter plus an in-memory queue, not a real thread pool. */
+/** Bounds fire-and-forget delivery to at most `maxConcurrency` requests in flight at
+ * once, queuing the rest up to `capacity` and dropping the oldest queued task once
+ * full. Implemented as a plain concurrency counter plus an in-memory queue — there's
+ * no thread pool in Node, just a cap on how many deliveries run concurrently. */
 export class AsyncDispatcher {
   private active = 0;
   private closed = false;

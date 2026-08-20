@@ -47,7 +47,7 @@ function optionalNonBlank(value: unknown, field: string): string | undefined {
   return value;
 }
 
-/** Mirrors IncidentRequest.Builder.build() in java/sdk-core exactly. Throws
+/** Validates and normalizes a raw request into its wire-ready shape. Throws
  * InvalidRequestError for internal callers to catch — buildIncidentRequest itself is not
  * part of the "never throws" public surface; IncidentClient.sendIncident/sendIncidentAsync
  * catch everything this can throw and convert it to a logged, non-throwing outcome. */

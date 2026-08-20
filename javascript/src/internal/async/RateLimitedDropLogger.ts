@@ -1,5 +1,6 @@
-/** Mirrors RateLimitedDropLogger in java/sdk-http: accumulates drop counts and emits at
- * most one summary log line per interval (60s), only if drops actually occurred. */
+/** Accumulates drop counts and emits at most one summary log line per interval (60s),
+ * only if drops actually occurred — avoids flooding the host application's logs with
+ * one line per dropped incident during a sustained overload. */
 export class RateLimitedDropLogger {
   private droppedInInterval = 0;
   private intervalStartedAt: number;

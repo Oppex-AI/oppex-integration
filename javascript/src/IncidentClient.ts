@@ -50,8 +50,7 @@ function toFailedResponse(err: unknown): IncidentResponse {
 
 /**
  * Client façade for posting incidents to Oppex. Create one client per application,
- * reuse it concurrently, and close it during application shutdown — same lifecycle
- * contract as the Java SDK's IncidentClient.
+ * reuse it concurrently, and close it during application shutdown.
  *
  * Neither sendIncident nor sendIncidentAsync ever throws or rejects. This is
  * deliberate: an incident-reporting call is most often made from inside a catch block
@@ -67,9 +66,8 @@ export class IncidentClient {
 
   constructor(options: IncidentClientOptions) {
     // Construction-time validation of client credentials is the one place this SDK
-    // still throws synchronously — matches Java's IncidentClientBuilder validating
-    // apiKey/serviceKey/tenant non-blank at build(). The "never throws" guarantee is
-    // scoped to sendIncident/sendIncidentAsync, not to misusing the constructor itself.
+    // still throws synchronously. The "never throws" guarantee is scoped to
+    // sendIncident/sendIncidentAsync, not to misusing the constructor itself.
     if (!options || typeof options.apiKey !== 'string' || options.apiKey.trim().length === 0) {
       throw new InvalidRequestError('apiKey is required');
     }

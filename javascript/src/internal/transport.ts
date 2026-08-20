@@ -25,10 +25,8 @@ export async function sendRequest(
 }
 
 /** fetch/undici exposes no public, dependency-free handle to close or cap connection
- * concurrency (Java bounds this via a 20-connection pool) — adding one would require
- * the undici package as an explicit dependency, which conflicts with "fetch only, zero
- * deps". Intentional, disclosed difference — see javascript/CLAUDE.md. Nothing to
- * close here. */
+ * concurrency — doing so would require the undici package as an explicit dependency,
+ * which conflicts with "fetch only, zero deps". Nothing to close here. */
 export function closeTransport(): void {
   // no-op
 }
