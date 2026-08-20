@@ -64,12 +64,36 @@ await client.close();
 Create one client per application, reuse it concurrently, and close it during
 application shutdown.
 
-## Build
+## Build and release
 
-```shell
-scripts/build-variant.sh modern   # or legacy
-```
+Two scripts, two distinct jobs — deliberately kept separate rather than one script
+doing both:
 
-Stages that variant's config/transport, installs, builds, and runs the full test
-suite. See [`CLAUDE.md`](./CLAUDE.md) for the engineering rationale behind the
-two-variant structure and its documented behavioral differences from the Java SDK.
+- **`scripts/build-variant.sh <legacy|modern>`** — builds and tests one variant **on
+  whatever branch/commit is currently checked out.** No branch switching, no
+  assumption about `master`. Stages that variant's `package.json`/
+  `package-lock.json`/`tsconfig.json`/`transport.ts`, installs, builds, and runs the
+  full test suite:
+
+  ```shell
+  scripts/build-variant.sh modern   # or legacy
+  ```
+
+  This is the one used in CI: `.github/workflows/node-compatibility.yml`'s matrix runs
+  this exact script, unmodified, for every `{variant, node}` combination — so a local
+  run and a CI run exercise identical logic.
+
+- **`scripts/release.sh <legacy-version|-> <modern-version|->`** — cuts a release.
+  Runs only on the current branch (in practice, always `master`, the only long-lived
+  branch), bumps the version(s), calls `build-variant.sh` internally to verify the bump
+  *before* committing, then creates `node-release-X.Y.Z` as a plain branch pointing at
+  that commit:
+
+  ```shell
+  scripts/release.sh 1.0.1 2.1.0   # release both
+  scripts/release.sh 1.0.1 -       # "-" skips a variant
+  ```
+
+See [`CLAUDE.md`](./CLAUDE.md) for the engineering rationale behind the two-variant
+structure, the release branch lifecycle, and documented behavioral differences from
+the Java SDK.
