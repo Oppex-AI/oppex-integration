@@ -5,7 +5,7 @@ This repository is the language-neutral home for Oppex integration client librar
 ## SDKs
 
 - [`java/`](java/README.md): Java 7-compatible incident SDK and framework examples.
-- [`javascript/`](javascript/README.md): Node.js incident SDK, published as two majors (`^1` for Node 8+, `^2` for Node 18+).
+- [`node/`](node/README.md): Node.js incident SDK, published as two majors (`^1` for Node 8+, `^2` for Node 18+).
 - `python/`: reserved for a future Python SDK.
 - `golang/`: reserved for a future Go SDK.
 

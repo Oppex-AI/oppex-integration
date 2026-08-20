@@ -173,7 +173,7 @@ differences from Java, each decided explicitly rather than left as an accident:
 ## 6. Directory layout
 
 ```text
-javascript/
+node/
 ├── CLAUDE.md  README.md  LICENSE  package.json  tsconfig.json  .gitignore
 ├── scripts/
 │   └── sync-release-1x.sh          # byte-identical across majors — see §8
@@ -209,7 +209,7 @@ node test/IncidentClient.test.js
 ```
 
 `test/smoke.js` must also pass when actually run under Node 8 — this is what the
-`javascript-compatibility.yml` CI matrix checks per branch; it is deliberately
+`node-compatibility.yml` CI matrix checks per branch; it is deliberately
 network-free (mirrors `.github/smoke/java/ExternalConsumer.java`) and written in plain,
 conservative CommonJS so it needs no compilation step of its own and stays shared,
 byte-identical, across both branches.
@@ -222,16 +222,16 @@ confirm it fails to compile. Revert before committing.
 
 Nothing about git or npm automatically keeps the "must stay byte-identical" files
 identical across `release/1.x` and `feat/node-sdk` — that has to be enforced
-deliberately. `javascript/scripts/sync-release-1x.sh` does this:
+deliberately. `node/scripts/sync-release-1x.sh` does this:
 
 ```shell
-javascript/scripts/sync-release-1x.sh check   # reports drift, exits 1 if any is found
-javascript/scripts/sync-release-1x.sh sync    # copies feat/node-sdk's shared files onto
-                                                # release/1.x, rebuilds, runs the full
-                                                # test suite, and commits only if it passes
+node/scripts/sync-release-1x.sh check   # reports drift, exits 1 if any is found
+node/scripts/sync-release-1x.sh sync    # copies feat/node-sdk's shared files onto
+                                         # release/1.x, rebuilds, runs the full test
+                                         # suite, and commits only if it passes
 ```
 
-`check` runs in CI on every push (see `javascript-compatibility.yml`'s `sync-check`
+`check` runs in CI on every push (see `node-compatibility.yml`'s `sync-check`
 job), so a shared-file edit made on only one branch is caught within minutes, not
 whenever someone eventually hits a bug that only reproduces on one branch. `sync` is a
 local, manual step — after changing any shared file on `feat/node-sdk`, run it to

@@ -1,4 +1,4 @@
-name: JavaScript compatibility
+name: Node compatibility
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: javascript-compatibility-${{ github.workflow }}-${{ github.ref }}
+  group: node-compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
 
       - name: Run sync check
         shell: bash
-        run: javascript/scripts/sync-release-1x.sh check
+        run: node/scripts/sync-release-1x.sh check
 
   library-package:
     name: Build and import library on Node ${{ matrix.node }} (${{ matrix.branch }})
@@ -85,7 +85,7 @@ jobs:
 
       - name: Install and build
         shell: bash
-        working-directory: javascript
+        working-directory: node
         run: |
           set -euo pipefail
           npm install
@@ -94,7 +94,7 @@ jobs:
       - name: Verify the Node-8 compile-time guardrail
         if: matrix.branch == 'release/1.x'
         shell: bash
-        working-directory: javascript
+        working-directory: node
         run: |
           set -euo pipefail
           cp src/internal/transport.ts "${RUNNER_TEMP}/transport.ts.bak"
@@ -109,7 +109,7 @@ jobs:
 
       - name: Run network-free smoke test
         shell: bash
-        working-directory: javascript
+        working-directory: node
         run: |
           set -euo pipefail
           node test/smoke.js | tee "${RUNNER_TEMP}/smoke-output.txt"
@@ -117,7 +117,7 @@ jobs:
 
       - name: Pack tarball
         shell: bash
-        working-directory: javascript
+        working-directory: node
         run: npm pack --pack-destination "${RUNNER_TEMP}"
 
       - name: Install and run external consumer via npm
@@ -126,7 +126,7 @@ jobs:
           set -euo pipefail
           consumer_dir="${RUNNER_TEMP}/consumer-npm"
           mkdir -p "${consumer_dir}"
-          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
           tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && npm install "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-npm-output.txt"
@@ -143,7 +143,7 @@ jobs:
           corepack enable
           consumer_dir="${RUNNER_TEMP}/consumer-pnpm"
           mkdir -p "${consumer_dir}"
-          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
           tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && pnpm install "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-pnpm-output.txt"
@@ -156,7 +156,7 @@ jobs:
           set -euo pipefail
           consumer_dir="${RUNNER_TEMP}/consumer-yarn"
           mkdir -p "${consumer_dir}"
-          cp .github/smoke/javascript/consumer.js "${consumer_dir}/"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
           tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && yarn add "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-yarn-output.txt"
@@ -165,7 +165,7 @@ jobs:
       - name: Upload package tarball
         uses: actions/upload-artifact@v7
         with:
-          name: oppex-integration-sdk-javascript-node${{ matrix.node }}
+          name: oppex-integration-sdk-node-${{ matrix.node }}
           path: ${{ runner.temp }}/oppex-integration-sdk-*.tgz
           if-no-files-found: error
           retention-days: 7

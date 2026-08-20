@@ -1,13 +1,13 @@
 #!/bin/sh
 # Keeps release/1.x's shared files in sync with feat/node-sdk. Everything under
-# javascript/ except the 4 files in ALLOWED_TO_DIFFER is supposed to stay
+# node/ except the 4 files in ALLOWED_TO_DIFFER is supposed to stay
 # byte-identical between the two branches, and nothing else enforces that.
 #
 # Usage:
-#   javascript/scripts/sync-release-1x.sh check   report drift, exit 1 if any is found
-#   javascript/scripts/sync-release-1x.sh sync    copy feat/node-sdk's shared files onto
-#                                                  release/1.x, rebuild, run the full test
-#                                                  suite, and commit only if it passes
+#   node/scripts/sync-release-1x.sh check   report drift, exit 1 if any is found
+#   node/scripts/sync-release-1x.sh sync    copy feat/node-sdk's shared files onto
+#                                            release/1.x, rebuild, run the full test
+#                                            suite, and commit only if it passes
 #
 # This script is itself one of the files that must stay byte-identical between
 # branches — if you change it, apply the same change to both.
@@ -17,7 +17,7 @@ SOURCE_BRANCH="feat/node-sdk"
 TARGET_BRANCH="release/1.x"
 MODE="${1:-check}"
 
-ALLOWED_TO_DIFFER="javascript/src/internal/transport.ts javascript/tsconfig.json javascript/package.json javascript/package-lock.json"
+ALLOWED_TO_DIFFER="node/src/internal/transport.ts node/tsconfig.json node/package.json node/package-lock.json"
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -28,7 +28,7 @@ is_allowed() {
   return 1
 }
 
-DRIFTED=$(git diff --name-only "$TARGET_BRANCH" "$SOURCE_BRANCH" -- javascript/)
+DRIFTED=$(git diff --name-only "$TARGET_BRANCH" "$SOURCE_BRANCH" -- node/)
 UNEXPECTED=""
 for f in $DRIFTED; do
   is_allowed "$f" || UNEXPECTED="$UNEXPECTED $f"
@@ -64,8 +64,8 @@ case "$MODE" in
       git checkout "$SOURCE_BRANCH" -- "$f"
     done
 
-    (cd javascript && npm install --silent && npm run build --silent)
-    (cd javascript && \
+    (cd node && npm install --silent && npm run build --silent)
+    (cd node && \
       node test/smoke.js && \
       node test/model/incidentRequest.test.js && \
       node test/internal/wireCodec.test.js && \
@@ -75,11 +75,11 @@ case "$MODE" in
       node test/IncidentClient.test.js)
 
     git add $UNEXPECTED
-    git commit -m "chore(js): sync shared files from $SOURCE_BRANCH"
+    git commit -m "chore(node): sync shared files from $SOURCE_BRANCH"
 
     echo "Synced and committed on $TARGET_BRANCH. Returning to $ORIGINAL_BRANCH."
     git checkout "$ORIGINAL_BRANCH"
-    (cd javascript && npm install --silent && npm run build --silent)
+    (cd node && npm install --silent && npm run build --silent)
     ;;
 
   *)

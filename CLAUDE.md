@@ -6,7 +6,7 @@ This is the durable repository-level guide. Read it before changing shared autom
 
 This repository houses equivalent Oppex integration libraries for multiple programming languages. Each SDK should present conventions natural to its language while preserving the shared incident-delivery contract and keeping release lifecycles independent.
 
-The Java SDK was the first implementation. It lives entirely under `java/`. Future Python, JavaScript/TypeScript, and Go implementations must be added as peer directories rather than mixed into the Java Maven reactor.
+The Java SDK was the first implementation. It lives entirely under `java/`. A Node.js implementation now lives entirely under `node/`. Future Python and Go implementations must be added as peer directories rather than mixed into the Java Maven reactor.
 
 ## Repository layout
 
@@ -21,8 +21,12 @@ oppex-integration/
 │   ├── sdk-http/
 │   ├── sdk-bundle/
 │   └── examples/
+├── node/                   # Complete Node.js SDK project
+│   ├── package.json
+│   ├── src/
+│   ├── test/
+│   └── scripts/
 ├── python/                 # Future Python SDK
-├── javascript/             # Future JavaScript/TypeScript SDK
 ├── golang/                 # Future Go SDK
 ├── .gitignore
 ├── README.md
@@ -37,7 +41,7 @@ Only create a future language directory when implementation work begins. Empty p
 
 Every language SDK owns its source tree, package-manager metadata, lockfiles, tests, examples, compatibility policy, and release configuration. One SDK must not require another SDK's toolchain to build or test.
 
-Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `python/`, `javascript/`, or `golang/` respectively.
+Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `node/`, `python/`, or `golang/` respectively.
 
 ### Shared root responsibilities
 
@@ -65,14 +69,14 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 ## Current language guides
 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
-- JavaScript/TypeScript: [`javascript/CLAUDE.md`](javascript/CLAUDE.md)
+- Node.js: [`node/CLAUDE.md`](node/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
 
 ## Adding a language SDK
 
 When adding a new SDK:
 
-1. Create the canonical peer directory (`python/`, `javascript/`, or `golang/`).
+1. Create the canonical peer directory (`python/` or `golang/`).
 2. Add a language README with installation, usage, build, test, and release instructions.
 3. Add a language-root `CLAUDE.md` recording compatibility floors, public API boundaries, dependencies, concurrency/lifecycle behavior, packaging, and directory ownership.
 4. Keep source, tests, examples, dependency metadata, and generated outputs within that directory.
