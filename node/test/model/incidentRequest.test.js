@@ -53,6 +53,17 @@ expectThrows(function () {
   buildIncidentRequest({ title: 'a', source: 'x', severity: 2, srcTimestamp: 0 });
 }, 'srcTimestamp');
 
+// NaN must be rejected too — every comparison against NaN is false, so a plain range
+// check (NaN < 1, NaN > 5) would otherwise let it silently through as "valid," and
+// JSON.stringify would then serialize it as null on the wire with no error surfaced.
+expectThrows(function () {
+  buildIncidentRequest({ title: 'a', source: 'x', severity: 2, priority: NaN });
+}, 'priority');
+
+expectThrows(function () {
+  buildIncidentRequest({ title: 'a', source: 'x', severity: 2, srcTimestamp: NaN });
+}, 'srcTimestamp');
+
 expectThrows(function () {
   buildIncidentRequest({ title: 'a', source: 'x', severity: 2, tenant: '   ' });
 }, 'tenant');

@@ -64,13 +64,17 @@ export function buildIncidentRequest(input: IncidentRequestInput): IncidentReque
 
   const severity = severityFromValue(Number(input.severity));
 
+  // Number.isFinite, not typeof + range comparison: every comparison against NaN is
+  // false (NaN < 1 and NaN > 5 are both false), so a plain range check silently lets
+  // NaN through as if it were valid — Number.isFinite correctly rejects NaN (and
+  // +/-Infinity) while still accepting every real finite number.
   const priority = input.priority === undefined ? 1 : input.priority;
-  if (typeof priority !== 'number' || priority < 1 || priority > 5) {
+  if (!Number.isFinite(priority) || priority < 1 || priority > 5) {
     throw new InvalidRequestError('priority must be between 1 and 5');
   }
 
   const srcTimestamp = input.srcTimestamp === undefined ? Date.now() : input.srcTimestamp;
-  if (typeof srcTimestamp !== 'number' || srcTimestamp <= 0) {
+  if (!Number.isFinite(srcTimestamp) || srcTimestamp <= 0) {
     throw new InvalidRequestError('srcTimestamp must be greater than zero');
   }
 
