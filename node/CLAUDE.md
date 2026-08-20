@@ -196,6 +196,7 @@ node/
 │                                                        the source of truth (see below)
 ├── scripts/
 │   ├── build-variant.sh <legacy|modern>    # stage + install + build + full test suite
+│   ├── docker-sanity.sh                    # local-only: real node:X containers, every version
 │   └── release.sh <legacy-ver|-> <modern-ver|->
 ├── variants/
 │   ├── legacy/       package.json, package-lock.json, tsconfig.json (Node >=8 floor)
@@ -253,6 +254,36 @@ node test/IncidentClient.test.js
 `node-compatibility.yml`'s CI matrix checks per variant; it is deliberately
 network-free (mirrors `.github/smoke/java/ExternalConsumer.java`) and written in plain,
 conservative CommonJS so it needs no compilation step of its own.
+
+**CI runs bare, not in containers.** `node-compatibility.yml`'s matrix provisions each
+Node version with `actions/setup-node` directly on `ubuntu-latest`, rather than
+`container: image: node:${{ matrix.node }}`. That container approach was tried first and
+reverted after it caused a real failure: `actions/checkout` runs as the runner's own
+user, but a container's `run:` steps execute as that image's own (different) user
+looking at the same checked-out files — which trips git's ownership check ("detected
+dubious ownership", the fix for CVE-2022-24765) and broke `build-variant.sh`'s own `git
+rev-parse --show-toplevel` call. `actions/setup-node` fetches any released Node version
+— including EOL ones like 8 — straight from nodejs.org's dist archive, which never
+removes old tarballs, so there's no real coverage lost by dropping the container.
+
+**What a container-based run actually still buys you** — the exact environment a
+consumer's own Docker deployment would run in, not just "some Node binary of the right
+version" — is preserved as a **local, not-CI** script instead:
+
+```shell
+node/scripts/docker-sanity.sh
+```
+
+Requires Docker running locally. Builds a fresh tarball per variant, then runs the same
+network-free external consumer CI already trusts
+(`.github/smoke/node/consumer.js`) inside the real `node:8`/`node:16`/.../`node:26`
+images — the same version sweep `oppex-integration-testing/docker`'s compose file
+already does for that separate sibling repo, folded into this one so it ships with the
+SDK itself rather than living only in a testing repo someone has to know to check out
+separately. It also re-runs the Node-8 anti-test (modern tarball on `node:8`, expected
+to fail with a `SyntaxError`, not silently succeed) on every invocation. Run it before
+cutting a release, or any time you want that stronger guarantee — it isn't wired into
+CI, so nothing about the automated PR/push gate depends on Docker being available.
 
 A fresh clone has no top-level `package.json`/`tsconfig.json` until you run
 `build-variant.sh` once — they're generated, not committed. Run
