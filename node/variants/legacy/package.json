@@ -1,0 +1,25 @@
+{
+  "name": "@oppex/integration-sdk",
+  "version": "1.1.0",
+  "description": "Node.js SDK for posting incidents to Oppex (Node >=8, http/https transport)",
+  "license": "Apache-2.0",
+  "homepage": "https://oppex.ai",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "smoke": "node test/smoke.js"
+  },
+  "devDependencies": {
+    "@types/node": "12.20.55",
+    "typescript": "^5.5.4"
+  }
+}

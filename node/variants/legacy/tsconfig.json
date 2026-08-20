@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022"],
+    "target": "ES2017",
+    "lib": ["ES2017"],
     "module": "CommonJS",
     "moduleResolution": "node",
     "esModuleInterop": true,
@@ -9,5 +9,6 @@
     "declaration": true,
     "outDir": "./dist"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/internal/transport.modern.ts"]
 }
