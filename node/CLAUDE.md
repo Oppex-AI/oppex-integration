@@ -241,3 +241,24 @@ against a dirty working tree, and refuses to commit if the rebuilt, resynced
 
 This script is itself one of the files that must stay byte-identical between branches —
 if you change it, apply the same change to both.
+
+## 9. Cutting a release
+
+`node/scripts/release.sh <new-version>` bumps `node/package.json`'s version on
+whichever branch is currently checked out, rebuilds, runs the full test suite, and
+commits + tags — it never pushes and never runs `npm publish`, so a version cut is
+never silently made public:
+
+```shell
+node/scripts/release.sh 1.0.1
+```
+
+It refuses to run against a dirty working tree, refuses a version that isn't a plain
+`X.Y.Z` semver, refuses a version that isn't strictly newer than the current one, and
+refuses to commit if the rebuilt package fails its own test suite. The tag it creates
+is language-qualified (`node-vX.Y.Z`), per root `CLAUDE.md`'s rule that workflow,
+artifact, and tag names must be language-qualified so they can't collide with a future
+Python or Go SDK's own version tags. After it finishes, pushing the branch and tag, and
+running `npm publish`, remain deliberate, separate, manual steps.
+
+This script is also one of the files that must stay byte-identical between branches.
