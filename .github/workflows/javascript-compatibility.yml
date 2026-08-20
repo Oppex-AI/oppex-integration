@@ -13,9 +13,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sync-check:
+    name: Verify release/1.x and feat/node-sdk stay in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Ensure both branches exist locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin release/1.x feat/node-sdk
+          for b in release/1.x feat/node-sdk; do
+            git show-ref --verify --quiet "refs/heads/${b}" || git branch "${b}" "origin/${b}"
+          done
+
+      - name: Run sync check
+        shell: bash
+        run: javascript/scripts/sync-release-1x.sh check
+
   library-package:
     name: Build and import library on Node ${{ matrix.node }} (${{ matrix.branch }})
     runs-on: ubuntu-latest
+    container:
+      image: node:${{ matrix.node }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -39,15 +64,17 @@ jobs:
             node: "26"
 
     steps:
+      # Runs the whole job inside the official node:${{ matrix.node }} image — the same
+      # images validated locally via oppex-integration-testing/docker — rather than
+      # relying on actions/setup-node's ability to provision Node 8, which Docker Hub
+      # still serves directly but the setup-node action has never been exercised
+      # against here. actions/checkout and other JS-based actions still work normally
+      # inside a job container: the runner injects its own Node for running actions,
+      # separate from the container's own PATH Node used by the run: steps below.
       - name: Check out ${{ matrix.branch }}
         uses: actions/checkout@v7
         with:
           ref: ${{ matrix.branch }}
-
-      - name: Set up Node.js ${{ matrix.node }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
 
       - name: Show tool versions
         shell: bash
