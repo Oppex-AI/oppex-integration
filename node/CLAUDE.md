@@ -244,21 +244,45 @@ if you change it, apply the same change to both.
 
 ## 9. Cutting a release
 
-`node/scripts/release.sh <new-version>` bumps `node/package.json`'s version on
-whichever branch is currently checked out, rebuilds, runs the full test suite, and
-commits + tags — it never pushes and never runs `npm publish`, so a version cut is
-never silently made public:
+`node/scripts/release.sh <release/1.x-version|-> <feat/node-sdk-version|->` releases
+either or both majors in one invocation, from whichever branch happens to be checked
+out — it checks out each target branch itself (creating it locally from
+`origin/<branch>` first if needed), so you don't need to `git checkout` either release
+branch yourself beforehand:
 
 ```shell
-node/scripts/release.sh 1.0.1
+node/scripts/release.sh 1.0.1 2.1.0   # release both
+node/scripts/release.sh 1.0.1 -       # release only release/1.x; "-" skips a branch
 ```
 
-It refuses to run against a dirty working tree, refuses a version that isn't a plain
-`X.Y.Z` semver, refuses a version that isn't strictly newer than the current one, and
-refuses to commit if the rebuilt package fails its own test suite. The tag it creates
-is language-qualified (`node-vX.Y.Z`), per root `CLAUDE.md`'s rule that workflow,
-artifact, and tag names must be language-qualified so they can't collide with a future
-Python or Go SDK's own version tags. After it finishes, pushing the branch and tag, and
-running `npm publish`, remain deliberate, separate, manual steps.
+For each branch being released, it bumps `node/package.json`'s version, rebuilds, runs
+the full test suite, and only then commits + tags — it never pushes and never runs
+`npm publish`, so a version cut is never silently made public. It refuses a dirty
+working tree (checked once, up front, before touching either branch), a version that
+isn't a plain `X.Y.Z` semver, a version that isn't strictly newer than that branch's
+current one, an already-existing tag, or a failing test run — and stops immediately,
+before touching the second branch, if the first branch's release fails for any reason.
+It always returns to whichever branch was checked out when the script started,
+regardless of outcome. Tags are language-qualified (`node-vX.Y.Z`), per root
+`CLAUDE.md`'s rule that workflow, artifact, and tag names must be language-qualified so
+they can't collide with a future Python or Go SDK's own version tags.
+
+After it finishes, it prints the exact push/publish commands for whichever branches
+were released — but running them stays a deliberate, separate, manual step. This
+includes one non-obvious but important detail: **a `release/1.x` publish must always
+use `npm publish --tag legacy`**, never bare `npm publish`. Without it, npm's `latest`
+dist-tag tracks *most recently published*, not *highest version* — publishing a 1.x
+patch after 2.x is already out would silently move `latest` backward, so a bare
+`npm install @oppex/integration-sdk` (no version specified) would install the older
+major. Only a `feat/node-sdk` publish should ever go to bare `latest`.
+
+There is no automated guard preventing `release/1.x` from being released into the
+`2.x.x` (or higher) range that semantically belongs to `feat/node-sdk`'s lineage — the
+script only checks "newer than this branch's own current version," not "does this
+number belong to the other branch." That discipline is manual.
+
+A failed release attempt leaves a dirty working tree by design (the version bump is
+written to disk before the test suite runs) — `git checkout -- node/package.json
+node/package-lock.json` before retrying.
 
 This script is also one of the files that must stay byte-identical between branches.
