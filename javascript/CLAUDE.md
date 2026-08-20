@@ -37,10 +37,11 @@ boundary worth a third major. This SDK therefore ships as:
   node >=18`. Transport: global `fetch` only, no `http`/`https` code at all.
 
 Both majors are authored from the same modern-TypeScript source (`import`/`export`,
-`async`/`await`, generics erased at compile time). Only `src/internal/transport.ts`, the
-two `@types/node` pins, `tsconfig.json`, and `package.json` differ between them —
-everything else is byte-identical and should be cherry-picked forward when patching
-`release/1.x`.
+`async`/`await`, generics erased at compile time). Exactly 4 files are allowed to differ
+between the two branches — `src/internal/transport.ts`, `tsconfig.json`,
+`package.json`, and `package-lock.json` (the `@types/node` pin lives in the latter two).
+Everything else, **including this file**, must stay byte-identical — see §8 for the
+script that enforces it.
 
 **Maintenance policy**: `release/1.x` receives security/critical patches only.
 `feat/node-sdk` is where active feature development happens. This is standard practice
@@ -70,11 +71,24 @@ something catches it at compile time. `release/1.x`'s `tsconfig.json` uses `targ
 "ES2017"` (Node 8's real syntax ceiling — not ES2022, whose private-fields/static-block
 syntax isn't all safely downlevelable) and `lib: ["ES2017"]` with no `"DOM"`, so those
 globals have **no ambient type declarations** in that branch's type-checking — calling
-one is a compile error, not a silent Node-8 crash. Pair this with an `@types/node`
-version old enough not to declare `fetch`/`AbortController` itself. This is the direct
-equivalent of Java's `animal-sniffer` check (`java/CLAUDE.md` §12) — never remove it to
-make a change compile; a build succeeding on a newer Node dev machine proves nothing
-about actual Node 8 runtime compatibility.
+one is a compile error, not a silent Node-8 crash. This is the direct equivalent of
+Java's `animal-sniffer` check (`java/CLAUDE.md` §12) — never remove it to make a change
+compile; a build succeeding on a newer Node dev machine proves nothing about actual
+Node 8 runtime compatibility.
+
+The pinned `@types/node` version on `release/1.x` matters precisely: `@types/node@8.10.66`
+and `@types/node@10.17.60` (the last published patches of those lines) **fail to
+compile at all** under a current TypeScript compiler — DefinitelyTyped never backported
+a later `Uint8Array`-generics compatibility fix to those frozen lines, so `Buffer`'s
+declaration conflicts with `lib.es2017.d.ts`'s `Uint8Array` regardless of anything this
+SDK does. `@types/node@14.18.63` compiles fine but already declares a global
+`AbortController` (a real Node 15+ API) — DefinitelyTyped had folded that global into
+every still-maintained major's latest patch by the time it shipped, so it doesn't
+enforce the Node 8–14 boundary despite compiling. **`@types/node@12.20.55`** (pinned to
+its own last published patch) is the version that actually enforces the boundary: it
+compiles cleanly under TypeScript 5.5, and correctly fails to compile a `fetch(...)` or
+`new AbortController()` call anywhere under `src/internal/transport.ts` with `Cannot
+find name` — the guardrail blocks both, not just one.
 
 `feat/node-sdk` uses `target: "ES2022"`, `lib: ["ES2022"]` (still no `"DOM"` — `fetch`/
 `AbortSignal` types come from a Node-18-era `@types/node`). Both majors keep `module:
@@ -161,6 +175,8 @@ differences from Java, each decided explicitly rather than left as an accident:
 ```text
 javascript/
 ├── CLAUDE.md  README.md  LICENSE  package.json  tsconfig.json  .gitignore
+├── scripts/
+│   └── sync-release-1x.sh          # byte-identical across majors — see §8
 ├── src/
 │   ├── index.ts                    # public exports only: IncidentClient, Severity, types
 │   ├── IncidentClient.ts           # façade — byte-identical across majors
@@ -175,7 +191,7 @@ javascript/
 └── test/
     ├── smoke.js                    # network-free, plain CommonJS, Node-8-safe — the CI gate
     ├── model/                      # pure unit tests
-    └── internal/                   # unit + local-loopback-server integration tests
+    └── internal/                   # unit + local-loopback-server integration tests, byte-identical
 ```
 
 ## 7. Verification
@@ -201,3 +217,27 @@ byte-identical, across both branches.
 To confirm the Node-8 guardrail is real, not just present in config: on `release/1.x`,
 temporarily add a `fetch(...)` call anywhere under `src/`, run `npm run build`, and
 confirm it fails to compile. Revert before committing.
+
+## 8. Keeping the two branches in sync
+
+Nothing about git or npm automatically keeps the "must stay byte-identical" files
+identical across `release/1.x` and `feat/node-sdk` — that has to be enforced
+deliberately. `javascript/scripts/sync-release-1x.sh` does this:
+
+```shell
+javascript/scripts/sync-release-1x.sh check   # reports drift, exits 1 if any is found
+javascript/scripts/sync-release-1x.sh sync    # copies feat/node-sdk's shared files onto
+                                                # release/1.x, rebuilds, runs the full
+                                                # test suite, and commits only if it passes
+```
+
+`check` runs in CI on every push (see `javascript-compatibility.yml`'s `sync-check`
+job), so a shared-file edit made on only one branch is caught within minutes, not
+whenever someone eventually hits a bug that only reproduces on one branch. `sync` is a
+local, manual step — after changing any shared file on `feat/node-sdk`, run it to
+propagate the change onto `release/1.x` before pushing either branch. It refuses to run
+against a dirty working tree, and refuses to commit if the rebuilt, resynced
+`release/1.x` fails its own test suite.
+
+This script is itself one of the files that must stay byte-identical between branches —
+if you change it, apply the same change to both.
