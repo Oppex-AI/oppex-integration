@@ -484,6 +484,33 @@ The smoke program is network-free. It creates and closes a client, validates mod
 
 The fat JAR is the application-facing distribution artifact. It contains no example classes and no application `Main-Class`. `sdk-core` and `sdk-http` remain separate implementation modules for development and testing.
 
+### Maven Central release
+
+Maven Central publishes one Java 7-bytecode release for all supported runtimes;
+it does not publish JDK-specific classifiers. The tag-triggered
+`.github/workflows/java-publish.yml` workflow calls the complete compatibility
+matrix before its publishing job. Stable tags have the form `java-vX.Y.Z`, and
+the workflow derives the Maven version from the tag in its temporary runner
+workspace.
+
+The protected `maven-central` environment owns the Central Portal token and GPG
+secrets. The compatibility workflow builds the canonical binary once on Java 7,
+records its SHA-256 checksum, and tests those exact bytes on Java 7, 8, 11, 17,
+21, and 25. Publishing runs on JDK 17 because the Central, source, Javadoc, and
+GPG plugins require Java 8 or newer. It downloads the tested Java 7 JAR,
+verifies the checksum, and restores that JAR after release packaging so the
+signed and deployed binary is byte-for-byte identical. The `central-release`
+profile attaches source and Javadoc JARs, signs all staged files, auto-publishes
+the validated Central bundle, and waits for the published state.
+
+The application-facing fat JAR's source classifier combines the owned sources
+from `sdk-core` and `sdk-http`. Its Javadocs are generated from those dependency
+source artifacts. Apache license and notice resources are merged during shading.
+
+The `dev.oppex` namespace must be verified in the Central Portal before the
+first release. This namespace corresponds to the `oppex.dev` DNS domain. Do not
+change the `groupId` after publication; Central releases are immutable.
+
 Once the repository has a GitHub remote, use:
 
 ```shell
@@ -615,9 +642,9 @@ Never remove or change the meaning of existing public methods in a minor release
 - No cancellation API.
 - No framework auto-configuration or extensions.
 - No transport abstraction.
-- No Maven Central deployment profile yet.
-
-The repository has Maven coordinates and artifact structure, but final Maven Central publication metadata is intentionally incomplete. License selection, SCM coordinates, developer/organization metadata, signing configuration, and publication credentials require project-owner and legal decisions and must not be invented by a coding agent.
+- Maven Central publishing requires the repository owner to maintain the
+  verified `dev.oppex` namespace, Central Portal token, public GPG key, protected
+  GitHub environment, and repository secrets documented in `README.md`.
 
 ## 18. Final change checklist
 

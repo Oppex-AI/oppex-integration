@@ -125,7 +125,12 @@ The framework-specific modules under `examples/` demonstrate lifecycle ownership
 
 ## Java compatibility CI
 
-The `Java compatibility` GitHub Actions workflow builds the fat library JAR, verifies Java 7 bytecode, compiles a fresh external consumer using only that JAR, and runs the consumer on Java 7, 8, 11, 17, 21, and 25. Each matrix entry uploads its library JAR as a short-lived workflow artifact.
+The `Java compatibility` GitHub Actions workflow builds the canonical fat JAR
+once with Java 7 and Maven 3.8.9, verifies its Java 7 bytecode, and records its
+SHA-256 checksum. Every matrix job downloads that exact JAR, verifies the
+checksum, compiles a fresh external consumer using only the JAR, and runs the
+consumer on Java 7, 8, 11, 17, 21, and 25. The workflow uploads one short-lived
+canonical JAR artifact rather than rebuilding it for each runtime.
 
 After the repository is pushed to GitHub, trigger and follow it with GitHub CLI:
 
@@ -168,13 +173,83 @@ PATH="/absolute/path/to/jdk-7/bin:$PATH" \
   -pl sdk-bundle -am clean verify
 ```
 
-Every successful version-specific build recreates the same importable fat JAR at
-`sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar`. Copy or rename it
-after each run if you want to retain separate local results per JDK.
+Every successful local build creates the importable fat JAR at
+`sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar`. The release
+pipeline intentionally builds that JAR only with Java 7. Its parallel matrix
+jobs test the same downloaded bytes on every supported runtime.
 
-The GitHub Actions matrix performs these as independent jobs, one job for each
-declared Java version. GitHub may execute those jobs in parallel; each job builds
-and uploads its own language- and Java-qualified fat-JAR artifact.
+## Publishing to Maven Central
+
+Maven Central receives one canonical release for all supported Java runtimes:
+
+```text
+dev.oppex:oppex-integration-sdk:<version>
+```
+
+The SDK is Java 7 bytecode, so publishing separate `java7`, `java8`, `java17`,
+and similar classifiers would duplicate the same library and would require
+consumers to select a classifier manually. Instead, the release workflow builds
+one canonical JAR on Java 7, records its checksum, and tests those exact bytes on
+Java 7, 8, 11, 17, 21, and 25. It publishes only after every compatibility job
+passes.
+
+### One-time Maven Central setup
+
+1. Create an account at the [Central Portal](https://central.sonatype.com/).
+2. Register and verify the `dev.oppex` namespace. Because namespaces reverse a
+   DNS domain, `dev.oppex` requires proof of control of `oppex.dev`. If Oppex
+   cannot verify that domain, choose and migrate to a verifiable `groupId`
+   before the first release; Maven Central coordinates are immutable.
+3. Generate a Central Portal user token. The portal supplies a token username
+   and token password. Store the username as `CENTRAL_USERNAME` and the token
+   password as `CENTRAL_TOKEN`; do not use or store your normal login password.
+4. Create a GPG signing key, publish its public key to a public key server, and
+   store the ASCII-armored private key and passphrase in GitHub as
+   `MAVEN_GPG_PRIVATE_KEY` and `MAVEN_GPG_PASSPHRASE`.
+5. In the GitHub repository, open **Settings > Environments**, create an
+   environment named `maven-central`, then add all four values under
+   **Environment secrets**. Restrict deployments to protected `java-v*` tags
+   and add required reviewers so publishing requires explicit approval.
+
+The required environment secrets are:
+
+| Secret | Value |
+| --- | --- |
+| `CENTRAL_USERNAME` | Username generated with the Central Portal user token |
+| `CENTRAL_TOKEN` | Password/token generated with that Central Portal user token |
+| `MAVEN_GPG_PRIVATE_KEY` | Complete ASCII-armored private signing key |
+| `MAVEN_GPG_PASSPHRASE` | Passphrase for the private signing key |
+
+The secrets must never be committed to this repository. The
+`java-publish.yml` workflow uses them only in the protected publishing job.
+
+### Publish a release
+
+Create and push a stable Java release tag from the exact commit to publish:
+
+```shell
+git tag -a java-v1.0.0 -m "Java SDK 1.0.0"
+git push origin java-v1.0.0
+```
+
+The workflow validates the tag, changes the reactor version from the development
+`-SNAPSHOT` version to the tag version in the runner workspace, and runs the
+full Java compatibility workflow. The publishing job downloads the tested JAR,
+verifies its checksum, generates sources and Javadocs on JDK 17, restores the
+canonical Java 7 JAR before signing, verifies byte-for-byte equality, signs all
+Central files, and publishes through the Central Portal. A successful release
+is available as:
+
+```xml
+<dependency>
+    <groupId>dev.oppex</groupId>
+    <artifactId>oppex-integration-sdk</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+Do not reuse or move a published tag. Maven Central releases cannot be replaced
+or deleted; publish a new version to correct a released artifact.
 
 ## License
 
