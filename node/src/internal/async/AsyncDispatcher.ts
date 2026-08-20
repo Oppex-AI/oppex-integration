@@ -6,11 +6,20 @@ export type Task = () => Promise<void>;
 /** Bounds fire-and-forget delivery to at most `maxConcurrency` requests in flight at
  * once, queuing the rest up to `capacity` and dropping the oldest queued task once
  * full. Implemented as a plain concurrency counter plus an in-memory queue — there's
- * no thread pool in Node, just a cap on how many deliveries run concurrently. */
+ * no thread pool in Node, just a cap on how many deliveries run concurrently.
+ *
+ * The queue tracks a head index instead of calling Array.prototype.shift() — shift()
+ * is O(n) per call (every remaining element has to be re-indexed), which would add
+ * needless CPU cost on every dequeue and every drop-oldest eviction, right during the
+ * sustained-overload scenario the bounded queue exists to survive. Dequeuing here is
+ * O(1); the backing array is only compacted (an O(remaining) slice) once the dead
+ * prefix at the front grows past `capacity`, which happens at most once per `capacity`
+ * dequeues — so the amortized cost per dequeue stays O(1). */
 export class AsyncDispatcher {
   private active = 0;
   private closed = false;
-  private readonly queue: Task[] = [];
+  private queue: Task[] = [];
+  private queueHead = 0;
   private idleWaiters: Array<() => void> = [];
   private readonly dropLogger: RateLimitedDropLogger;
 
@@ -20,6 +29,36 @@ export class AsyncDispatcher {
     dropLogger?: RateLimitedDropLogger,
   ) {
     this.dropLogger = dropLogger ?? new RateLimitedDropLogger(DROP_LOG_INTERVAL_MS);
+  }
+
+  private get queueLength(): number {
+    return this.queue.length - this.queueHead;
+  }
+
+  private dequeue(): Task | undefined {
+    if (this.queueHead >= this.queue.length) {
+      return undefined;
+    }
+    const task = this.queue[this.queueHead];
+    this.queue[this.queueHead] = undefined as unknown as Task; // release the reference for GC
+    this.queueHead++;
+    if (this.queueHead >= this.queue.length) {
+      // Fully drained — reset rather than carry dead space forward indefinitely.
+      this.queue = [];
+      this.queueHead = 0;
+    } else if (this.queueHead > this.capacity) {
+      // Dead prefix has grown past capacity — compact once. This is O(remaining), but
+      // amortized over up to `capacity` dequeues it stays O(1) per dequeue.
+      this.queue = this.queue.slice(this.queueHead);
+      this.queueHead = 0;
+    }
+    return task;
+  }
+
+  private dropOldest(): void {
+    this.queue[this.queueHead] = undefined as unknown as Task;
+    this.queueHead++;
+    this.dropLogger.recordDrop();
   }
 
   /** Task must already catch its own errors — see IncidentClient.sendIncidentAsync,
@@ -33,9 +72,8 @@ export class AsyncDispatcher {
       this.run(task);
       return;
     }
-    if (this.queue.length >= this.capacity) {
-      this.queue.shift();
-      this.dropLogger.recordDrop();
+    if (this.queueLength >= this.capacity) {
+      this.dropOldest();
     }
     this.queue.push(task);
   }
@@ -50,10 +88,10 @@ export class AsyncDispatcher {
       })
       .then(() => {
         this.active--;
-        const next = this.queue.shift();
+        const next = this.dequeue();
         if (next) {
           this.run(next);
-        } else if (this.active === 0 && this.queue.length === 0) {
+        } else if (this.active === 0 && this.queueLength === 0) {
           const waiters = this.idleWaiters;
           this.idleWaiters = [];
           waiters.forEach((resolve) => resolve());
@@ -62,7 +100,7 @@ export class AsyncDispatcher {
   }
 
   private waitUntilIdle(): Promise<void> {
-    if (this.active === 0 && this.queue.length === 0) {
+    if (this.active === 0 && this.queueLength === 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => this.idleWaiters.push(resolve));
@@ -88,9 +126,10 @@ export class AsyncDispatcher {
       this.waitUntilIdle().then(finish);
       setTimeout(finish, timeoutMs);
     });
-    if (this.queue.length > 0) {
-      const forcedDropCount = this.queue.length;
-      this.queue.length = 0;
+    if (this.queueLength > 0) {
+      const forcedDropCount = this.queueLength;
+      this.queue = [];
+      this.queueHead = 0;
       console.warn(`[oppex-sdk] Force-dropped ${forcedDropCount} pending incidents during close.`);
     }
   }

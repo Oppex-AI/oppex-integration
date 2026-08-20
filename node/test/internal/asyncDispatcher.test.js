@@ -71,6 +71,52 @@ async function main() {
   // close() is idempotent.
   await d3.close(1000);
 
+  // Sustained throughput well past capacity, with the queue kept topped up near
+  // capacity (never emptying) rather than draining between tasks: the backing array is
+  // only compacted once its dead (already-dequeued) prefix grows past `capacity`, and
+  // that path only fires while the queue is non-empty. Each running task immediately
+  // feeds in the next one, so the queue stays full and many compactions happen across
+  // the run. FIFO order and exact task count must still hold — this is the regression
+  // test for the shift()-free, head-index queue implementation.
+  var capacity = 5;
+  var totalTasks = capacity * 20;
+  var seen = [];
+  var nextToSubmit = 0;
+  var d4 = new AsyncDispatcher(1, capacity);
+
+  function feedOne() {
+    if (nextToSubmit >= totalTasks) {
+      return;
+    }
+    var n = nextToSubmit++;
+    d4.submit(function () {
+      seen.push(n);
+      feedOne();
+      return Promise.resolve();
+    });
+  }
+
+  for (var i = 0; i < capacity; i++) {
+    feedOne();
+  }
+
+  // Wait for the self-feeding cascade to fully finish submitting and running before
+  // close()'ing — close() flips the dispatcher closed synchronously, which would
+  // otherwise silently reject every later feedOne() re-submission made from inside an
+  // already-queued task's body, well before the cascade actually reaches totalTasks.
+  while (seen.length < totalTasks) {
+    await delay(5);
+  }
+
+  await d4.close(2000);
+  assert.deepStrictEqual(
+    seen,
+    Array.from({ length: totalTasks }, function (_, i) {
+      return i;
+    }),
+    'every submitted task must run exactly once, in order, across many rounds of compaction',
+  );
+
   console.log('asyncDispatcher.test.js OK');
 }
 
