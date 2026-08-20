@@ -54,6 +54,18 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
+      # actions/checkout runs as the runner's own user, but this job's run: steps
+      # execute inside the node:${{ matrix.node }} container as that image's own user —
+      # a different uid looking at the same checked-out files. Git's ownership check
+      # (CVE-2022-24765) refuses to operate on a repository it doesn't recognize as
+      # owned by the current user, which otherwise fails every later git command
+      # (including build-variant.sh's own `git rev-parse --show-toplevel`) with
+      # "detected dubious ownership". Scoped to exactly this workspace path, not a
+      # blanket wildcard, since this step re-runs fresh in every container anyway.
+      - name: Trust the checked-out workspace for git
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Show tool versions
         shell: bash
         run: |
