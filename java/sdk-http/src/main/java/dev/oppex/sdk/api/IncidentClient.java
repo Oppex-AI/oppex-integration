@@ -25,7 +25,6 @@ public final class IncidentClient implements Closeable {
     private static final String DEFAULT_ENDPOINT = "https://api.oppex.ai/api/v1/incident/post";
 
     private final String serviceKey;
-    private final String tenant;
     private final InternalMetrics metrics;
     private final HttpExecutor httpExecutor;
     private final RetryExecutor retryExecutor;
@@ -34,27 +33,24 @@ public final class IncidentClient implements Closeable {
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
 
     /** Prefer {@link #builder()} for readability and future source compatibility. */
-    public IncidentClient(String apiKey, String serviceKey, String tenant) {
-        this(apiKey, serviceKey, tenant, DEFAULT_ENDPOINT);
+    public IncidentClient(String apiKey, String serviceKey) {
+        this(apiKey, serviceKey, DEFAULT_ENDPOINT);
     }
 
-    IncidentClient(String apiKey, String serviceKey, String tenant, String endpoint) {
+    IncidentClient(String apiKey, String serviceKey, String endpoint) {
         requireNonBlank(apiKey, "apiKey");
         requireNonBlank(serviceKey, "serviceKey");
-        requireNonBlank(tenant, "tenant");
         requireNonBlank(endpoint, "endpoint");
         this.serviceKey = serviceKey;
-        this.tenant = tenant;
         this.metrics = new InternalMetrics();
         this.httpExecutor = new HttpExecutor(apiKey, endpoint);
         this.retryExecutor = new RetryExecutor(metrics);
         this.asyncDispatcher = new AsyncDispatcher(metrics);
     }
 
-    IncidentClient(String serviceKey, String tenant, InternalMetrics metrics, HttpExecutor httpExecutor,
+    IncidentClient(String serviceKey, InternalMetrics metrics, HttpExecutor httpExecutor,
             RetryExecutor retryExecutor, AsyncDispatcher asyncDispatcher) {
         this.serviceKey = serviceKey;
-        this.tenant = tenant;
         this.metrics = metrics;
         this.httpExecutor = httpExecutor;
         this.retryExecutor = retryExecutor;
@@ -114,7 +110,7 @@ public final class IncidentClient implements Closeable {
         try {
             IncidentResponse response = retryExecutor.execute(new RetryExecutor.Operation<IncidentResponse>() {
                 public IncidentResponse execute() throws IOException, IncidentException {
-                    return httpExecutor.execute(request, serviceKey, tenant);
+                    return httpExecutor.execute(request, serviceKey);
                 }
             });
             metrics.incrementSuccessful();

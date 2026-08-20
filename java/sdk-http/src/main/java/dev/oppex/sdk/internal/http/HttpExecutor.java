@@ -52,7 +52,7 @@ public final class HttpExecutor implements Closeable {
         this.jsonCodec = new JsonCodec();
     }
 
-    public IncidentResponse execute(IncidentRequest request, String defaultServiceKey, String defaultTenant)
+    public IncidentResponse execute(IncidentRequest request, String defaultServiceKey)
             throws IOException, IncidentException {
         if (closed.get()) {
             throw new IncidentException("IncidentClient is closed");
@@ -62,7 +62,7 @@ public final class HttpExecutor implements Closeable {
         post.setConfig(requestConfig);
         post.setHeader("Accept", "application/json");
         post.setHeader("X-API-KEY", apiKey);
-        post.setEntity(new StringEntity(jsonCodec.serialize(request, defaultServiceKey, defaultTenant),
+        post.setEntity(new StringEntity(jsonCodec.serialize(request, defaultServiceKey),
                 ContentType.APPLICATION_JSON));
 
         CloseableHttpResponse response = httpClient.execute(post);

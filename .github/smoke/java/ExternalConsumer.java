@@ -14,7 +14,6 @@ public final class ExternalConsumer {
         IncidentClient client = IncidentClient.builder()
                 .apiKey("external-consumer-api-key")
                 .serviceKey("external-consumer-service-key")
-                .tenant("external-consumer-tenant")
                 .build();
         try {
             IncidentRequest request = IncidentRequest.builder()

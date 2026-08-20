@@ -6,11 +6,10 @@ import io.dropwizard.lifecycle.Managed;
 public final class OppexManagedClient implements Managed {
     private final IncidentClient client;
 
-    public OppexManagedClient(String apiKey, String serviceKey, String tenant) {
+    public OppexManagedClient(String apiKey, String serviceKey) {
         this.client = IncidentClient.builder()
                 .apiKey(apiKey)
                 .serviceKey(serviceKey)
-                .tenant(tenant)
                 .build();
     }
 
@@ -26,4 +25,3 @@ public final class OppexManagedClient implements Managed {
         client.close();
     }
 }
-

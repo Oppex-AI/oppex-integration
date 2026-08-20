@@ -43,6 +43,6 @@ public class IncidentRequestTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankOptionalField() {
-        IncidentRequest.builder().title("Failure").source("Deploy").severity(2).tenant(" ").build();
+        IncidentRequest.builder().title("Failure").source("Deploy").severity(2).component(" ").build();
     }
 }

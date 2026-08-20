@@ -9,13 +9,10 @@ import org.springframework.context.annotation.Configuration;
 public class OppexConfiguration {
     @Bean(destroyMethod = "close")
     public IncidentClient incidentClient(@Value("${oppex.api-key}") String apiKey,
-            @Value("${oppex.service-key}") String serviceKey,
-            @Value("${oppex.tenant}") String tenant) {
+            @Value("${oppex.service-key}") String serviceKey) {
         return IncidentClient.builder()
                 .apiKey(apiKey)
                 .serviceKey(serviceKey)
-                .tenant(tenant)
                 .build();
     }
 }
-

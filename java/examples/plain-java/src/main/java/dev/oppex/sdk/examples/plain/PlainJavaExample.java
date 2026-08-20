@@ -12,7 +12,6 @@ public final class PlainJavaExample {
         IncidentClient client = IncidentClient.builder()
                 .apiKey(System.getenv("OPPEX_API_KEY"))
                 .serviceKey(System.getenv("OPPEX_SERVICE_KEY"))
-                .tenant(System.getenv("OPPEX_TENANT"))
                 .build();
         try {
             client.postAsync(IncidentRequest.builder()
@@ -26,4 +25,3 @@ public final class PlainJavaExample {
         }
     }
 }
-
