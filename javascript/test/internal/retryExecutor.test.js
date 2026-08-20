@@ -74,6 +74,62 @@ async function main() {
   assert.strictEqual(result, 'ok');
   assert.strictEqual(attempts3, 2);
 
+  // Network-level failure (code: -1) that exhausts retries gets "(after N attempts)"
+  // appended to its message — matches java/sdk-http's IOException-exhaustion wording.
+  var networkErr;
+  try {
+    await executeWithRetry(
+      function () {
+        return Promise.reject({ retryable: true, code: -1, message: 'ECONNREFUSED' });
+      },
+      function () {
+        return true;
+      },
+      fakeSleep([]),
+    );
+  } catch (err) {
+    networkErr = err;
+  }
+  assert.strictEqual(networkErr.message, 'ECONNREFUSED (after 4 attempts)');
+  assert.strictEqual(networkErr.code, -1, 'other fields must survive unchanged');
+
+  // HTTP-status failure (code !== -1) that exhausts retries is rethrown with its
+  // ORIGINAL message unchanged — matches java/sdk-http's IncidentException branch,
+  // which never gets attempt-count wording even after exhausting retries.
+  var statusErr;
+  try {
+    await executeWithRetry(
+      function () {
+        return Promise.reject({ retryable: true, code: 503, message: 'HTTP 503' });
+      },
+      function () {
+        return true;
+      },
+      fakeSleep([]),
+    );
+  } catch (err) {
+    statusErr = err;
+  }
+  assert.strictEqual(statusErr.message, 'HTTP 503', 'HTTP-status exhaustion must not get attempt-count wording');
+
+  // Immediately non-retryable failure (e.g. code 401) never enters the retry loop, so
+  // it never gets attempt-count wording either, network-coded or not.
+  var immediateErr;
+  try {
+    await executeWithRetry(
+      function () {
+        return Promise.reject({ retryable: false, code: 401, message: 'HTTP 401' });
+      },
+      function (err) {
+        return err.retryable;
+      },
+      fakeSleep([]),
+    );
+  } catch (err) {
+    immediateErr = err;
+  }
+  assert.strictEqual(immediateErr.message, 'HTTP 401');
+
   console.log('retryExecutor.test.js OK');
 }
 

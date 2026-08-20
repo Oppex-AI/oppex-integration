@@ -134,6 +134,19 @@ differences from Java, each decided explicitly rather than left as an accident:
   500, 502, 503, 504 retryable; 400, 401, 403, 404, 409, 422 explicitly non-retryable;
   everything else (e.g. 501, 505) non-retryable, per Java's "all other statuses are
   non-retryable unless the policy is deliberately updated" rule.
+- **Final-failure logging matches Java's exact asymmetry, not a blanket rule.**
+  `RetryExecutor.executeWithRetry`'s `withAttemptCountIfNetworkFailure` appends
+  `"(after N attempts)"` to a failure's message **only** when a network-level failure
+  (`code: -1` — the same "no real HTTP response involved" sentinel Java's
+  `IncidentException.getStatusCode()` documents) exhausts retries — this mirrors
+  `RetryExecutor.java`'s `IOException` branch exactly. An HTTP-status failure
+  (`code !== -1`) that exhausts retries is rethrown with its original message
+  unchanged, matching Java's `IncidentException` branch, which never gets attempt-count
+  wording even after exhausting retries. An immediately non-retryable failure (401,
+  400, etc.) never enters the retry loop at all, so it never gets this wording either.
+  Individual retry attempts are still never logged — only this one, final log line can
+  carry an attempt count, per `java/CLAUDE.md` §10's "not separately for each attempt"
+  rule.
 - **`ENDPOINT_URL` reads `process.env.OPPEX_TEST_ENDPOINT_URL` before falling back to
   the real endpoint** (`src/constants.ts`). This is a test-only seam, not public API —
   it isn't a constructor parameter, isn't part of the TypeScript public surface, and a
