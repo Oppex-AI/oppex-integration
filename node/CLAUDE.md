@@ -250,21 +250,53 @@ node test/internal/transport.test.js
 node test/IncidentClient.test.js
 ```
 
-`test/smoke.js` must also pass when actually run under Node 8 — this is what
-`node-compatibility.yml`'s CI matrix checks per variant; it is deliberately
-network-free (mirrors `.github/smoke/java/ExternalConsumer.java`) and written in plain,
-conservative CommonJS so it needs no compilation step of its own.
+`test/smoke.js` is deliberately network-free (mirrors
+`.github/smoke/java/ExternalConsumer.java`) and written in plain, conservative
+CommonJS so it needs no compilation step of its own — but the thing that actually
+*proves* real Node-version compatibility in CI is the separate external-consumer step
+covered below, not this in-repo run of `build-variant.sh`'s own test suite.
 
-**CI runs bare, not in containers.** `node-compatibility.yml`'s matrix provisions each
-Node version with `actions/setup-node` directly on `ubuntu-latest`, rather than
-`container: image: node:${{ matrix.node }}`. That container approach was tried first and
-reverted after it caused a real failure: `actions/checkout` runs as the runner's own
-user, but a container's `run:` steps execute as that image's own (different) user
-looking at the same checked-out files — which trips git's ownership check ("detected
-dubious ownership", the fix for CVE-2022-24765) and broke `build-variant.sh`'s own `git
-rev-parse --show-toplevel` call. `actions/setup-node` fetches any released Node version
-— including EOL ones like 8 — straight from nodejs.org's dist archive, which never
-removes old tarballs, so there's no real coverage lost by dropping the container.
+**CI runs bare, not in containers, and builds under one fixed Node — not
+`matrix.node`.** `node-compatibility.yml`'s matrix provisions Node with
+`actions/setup-node` directly on `ubuntu-latest`, rather than `container: image:
+node:${{ matrix.node }}`. That container approach was tried first and reverted after it
+caused two real failures:
+
+1. `actions/checkout` runs as the runner's own user, but a container's `run:` steps
+   execute as that image's own (different) user looking at the same checked-out files
+   — which trips git's ownership check ("detected dubious ownership", the fix for
+   CVE-2022-24765) and broke `build-variant.sh`'s own `git rev-parse --show-toplevel`
+   call.
+2. Once that was fixed and the Node 8 entry's build step actually ran for the first
+   time, it hit a second, unrelated problem: **building requires a Node capable of
+   running the TypeScript compiler package itself**, not just a Node new enough for
+   this SDK's own `legacy`/`modern` output targets. TypeScript's own published bundle
+   (`typescript/lib/tsc.js`) uses syntax — optional catch binding (`catch {}` with no
+   parameter) — that Node 8's parser rejects outright. `container: image: node:8` would
+   have hit this exact same `SyntaxError` the moment it got far enough to actually run
+   `npm run build`; it never had before, because the ownership bug above always failed
+   first.
+
+The fix for both: the workflow now calls `actions/setup-node` **twice**. First, to a
+fixed, modern version (`"22"`) for "Build and test the variant" and "Pack tarball" —
+building has nothing to do with which Node this SDK targets, only with what's needed to
+run the tooling. Then, immediately before the external-consumer steps, a second
+`actions/setup-node` call switches to the real `matrix.node` — that's where actual
+runtime compatibility gets proven, by installing the already-built tarball and running
+it exactly the way a real consumer on that Node version would (never compiling it
+themselves). `actions/setup-node` fetches any released Node version — including EOL
+ones like 8 — straight from nodejs.org's dist archive, which never removes old
+tarballs, so there's no coverage lost by building under a different, newer Node than
+the one being verified.
+
+One more version-drift trap this surfaced: the pnpm and yarn external-consumer steps
+used to call bare `corepack enable`, which fetches whatever pnpm/yarn release is
+currently latest. pnpm's own floor keeps rising independently of this repo — pnpm 11
+requires Node ≥22.13, which broke this step outright on the Node 18 and 20 entries, a
+failure with nothing to do with this SDK's own Node 18 floor. Both are now pinned via
+`corepack prepare <pkg>@<version> --activate`: `pnpm@8.15.9` (supports Node ≥16.14,
+covering every non-Node-8 matrix entry) and `yarn@1.22.22` (Yarn Classic, no
+meaningful floor at all).
 
 **What a container-based run actually still buys you** — the exact environment a
 consumer's own Docker deployment would run in, not just "some Node binary of the right
