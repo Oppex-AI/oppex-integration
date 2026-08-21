@@ -9,7 +9,8 @@ POST https://api.oppex.ai/api/v1/incident/post
 Published as **`@oppex/integration-sdk`** across two independently versioned major
 lines, split at the one real Node capability boundary in the supported range (native
 `fetch`, Node 18). Both are built from this one branch — see
-[`CLAUDE.md`](./CLAUDE.md) §2 for how:
+[`CLAUDE.md`](./CLAUDE.md) §2 for how. For how a call actually flows through the SDK
+at runtime, see [`docs/architecture.md`](./docs/architecture.md).
 
 | Major | Node floor | Transport | Variant |
 | --- | --- | --- | --- |
