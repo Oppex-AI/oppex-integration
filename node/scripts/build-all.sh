@@ -21,6 +21,13 @@ cd "$(git rev-parse --show-toplevel)/node"
 
 for variant in legacy modern; do
   echo "=== $variant ==="
+
+  # build-variant.sh's own `ln -sf` already force-overwrites whatever transport.ts
+  # currently points at, so this isn't fixing a real bug — it just means each variant
+  # starts its build from a clean slate (no symlink sitting there at all) rather than
+  # one already pointing at the other variant's source, which is easier to reason
+  # about when reading this script than trusting -f silently did the right thing.
+  rm -f src/internal/transport.ts
   ./scripts/build-variant.sh "$variant"
 
   # npm install (inside build-variant.sh) syncs the STAGED package-lock.json's own
@@ -33,6 +40,10 @@ for variant in legacy modern; do
   cp -r dist "dist-${variant}"
   echo ""
 done
+
+# No variant's symlink left dangling once this script is done — the next thing to run
+# it (build-variant.sh, docker-sanity.sh, or this script again) starts clean either way.
+rm -f src/internal/transport.ts
 
 echo "Built and tested both variants successfully."
 echo "  legacy dist: node/dist-legacy/"
