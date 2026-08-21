@@ -31,48 +31,53 @@ Everything under `internal/` is exactly that — internal. `index.ts` exports on
 (`IncidentRequestInput`, `IncidentResponse`). Nothing else is part of the supported
 surface, even if it's technically reachable by a deep import.
 
-## Request flow: `sendIncident`
+## Request flow
+
+Both `sendIncident` and `sendIncidentAsync` fall through the exact same pipeline once
+they reach `deliver()` — `buildIncidentRequest` → `executeWithRetry` →
+`transport.sendRequest`, with up to 4 attempts and fixed backoff on a retryable
+failure. Neither `deliver()` nor `executeWithRetry` has any idea which of the two
+public methods called it. The only difference is what sits *above* `deliver()`: a
+direct `await`, or a task handed to `AsyncDispatcher`.
+
+### `sendIncident` — the caller waits
 
 ```mermaid
-sequenceDiagram
-    participant Caller
-    participant IncidentClient
-    participant Validation as buildIncidentRequest
-    participant Retry as executeWithRetry
-    participant Transport
-    participant Oppex as Oppex API
-
-    Caller->>IncidentClient: sendIncident(input)
-    IncidentClient->>Validation: buildIncidentRequest(input)
-    alt invalid input
-        Validation-->>IncidentClient: throws InvalidRequestError
-        IncidentClient-->>Caller: { successful: false, code: -1, ... }
-    else valid
-        Validation-->>IncidentClient: IncidentRequest
-        IncidentClient->>Retry: executeWithRetry(attempt, isRetryable)
-        loop up to 4 attempts total
-            Retry->>Transport: sendRequest(url, payload, headers)
-            Transport->>Oppex: POST /api/v1/incident/post
-            Oppex-->>Transport: status + body
-            Transport-->>Retry: { statusCode, body }
-            alt retryable status (429/500/502/503/504) or network error
-                Retry->>Retry: sleep(fixed delay), retry
-            else terminal (2xx, or non-retryable 4xx)
-                Retry-->>IncidentClient: parseResponse(status, body)
-            end
-        end
-        IncidentClient-->>Caller: IncidentResponse (successful: true/false)
-    end
+flowchart TD
+    A["sendIncident(input)"] --> B["buildIncidentRequest"]
+    B -->|invalid| Z["return { successful: false }"]
+    B -->|valid| C["deliver()"]
+    C --> D["executeWithRetry"]
+    D --> E["transport.sendRequest"]
+    E -->|success| F["parseResponse -> IncidentResponse"]
+    E -->|retryable failure, attempts left| D
+    E -->|non-retryable, or attempts exhausted| Z
+    F --> G["caller's await resolves"]
+    Z --> G
 ```
 
-Every branch in that diagram — invalid input, retries exhausting, a non-retryable
-4xx, an unexpected internal error — lands back at the caller as a normal
-`IncidentResponse`, never a thrown exception or a rejected promise. That's the whole
-point of the design: `sendIncident` is safe to `await` from inside a `catch` block that
-is already handling some other failure.
+The caller's own `await` **is** the concurrency control here — however many
+`sendIncident` calls are in flight at once is exactly how many retry chains are
+running. Nothing above queues or limits this path.
 
-`sendIncidentAsync` runs the identical `buildIncidentRequest` → `deliver` path, but
-wrapped in `AsyncDispatcher.submit()` instead of being awaited directly — see below.
+### `sendIncidentAsync` — the dispatcher waits instead
+
+```mermaid
+flowchart TD
+    A["sendIncidentAsync(input)"] --> B["dispatcher.submit(task)"]
+    B --> C["call returns immediately — caller moves on"]
+    B -.->|later, when a slot is free| D["run(task)"]
+    D --> E["buildIncidentRequest"]
+    E --> F["deliver()"]
+    F --> G["executeWithRetry -> transport.sendRequest"]
+    G -->|retryable, attempts left| G
+    G -->|done: success or exhausted| H["onSuccess / onError, logged"]
+    H --> I["slot freed, next queued task starts"]
+```
+
+The retry loop inside `G` never touches the queue — it holds its one concurrency slot
+for the *entire* retry sequence (up to ~35s worst case: 4 attempts × up to 8s, plus
+backoff sleeps) before that slot frees up for the next queued task.
 
 ## Key components
 
