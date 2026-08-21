@@ -16,7 +16,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "smoke": "node test/smoke.js"
+    "smoke": "node test/smoke.js",
+    "build:all": "scripts/build-all.sh",
+    "sanity": "scripts/docker-sanity.sh"
   },
   "devDependencies": {
     "@types/node": "12.20.55",
