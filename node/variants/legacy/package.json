@@ -1,7 +1,7 @@
 {
-  "name": "@oppex/integration-sdk",
-  "version": "1.1.0",
-  "description": "Node.js SDK for posting incidents to Oppex (Node >=8, http/https transport)",
+  "name": "@oppex/integration-sdk-legacy",
+  "version": "1.0.0",
+  "description": "Node.js SDK for posting incidents to Oppex (Node >=8, http/https transport). For Node >=18, use @oppex/integration-sdk instead.",
   "license": "Apache-2.0",
   "homepage": "https://oppex.ai",
   "main": "./dist/index.js",

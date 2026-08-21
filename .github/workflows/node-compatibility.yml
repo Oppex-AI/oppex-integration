@@ -21,22 +21,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Two separate npm packages, not one package with two major version lines —
+          # pkgName is what the external-consumer steps below require() against.
           - variant: legacy
             node: "8"
+            pkgName: "@oppex/integration-sdk-legacy"
           - variant: legacy
             node: "16"
+            pkgName: "@oppex/integration-sdk-legacy"
           - variant: legacy
             node: "17"
+            pkgName: "@oppex/integration-sdk-legacy"
           - variant: modern
             node: "18"
+            pkgName: "@oppex/integration-sdk"
           - variant: modern
             node: "20"
+            pkgName: "@oppex/integration-sdk"
           - variant: modern
             node: "22"
+            pkgName: "@oppex/integration-sdk"
           - variant: modern
             node: "24"
+            pkgName: "@oppex/integration-sdk"
           - variant: modern
             node: "26"
+            pkgName: "@oppex/integration-sdk"
 
     steps:
       # One checkout, one branch — both variants are built from it via
@@ -94,6 +104,8 @@ jobs:
 
       - name: Install and run external consumer via npm
         shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
         run: |
           set -euo pipefail
           consumer_dir="${RUNNER_TEMP}/consumer-npm"
@@ -117,6 +129,8 @@ jobs:
       - name: Install and run external consumer via pnpm
         if: matrix.node != '8'
         shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
         run: |
           set -euo pipefail
           corepack enable
@@ -132,6 +146,8 @@ jobs:
       - name: Install and run external consumer via yarn
         if: matrix.node != '8'
         shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
         run: |
           set -euo pipefail
           corepack enable

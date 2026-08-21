@@ -6,30 +6,34 @@ Node.js SDK for posting incidents to Oppex:
 POST https://api.oppex.ai/api/v1/incident/post
 ```
 
-Published as **`@oppex/integration-sdk`** across two independently versioned major
-lines, split at the one real Node capability boundary in the supported range (native
-`fetch`, Node 18). Both are built from this one branch — see
+Published as **two separate npm packages**, split at the one real Node capability
+boundary in the supported range (native `fetch`, Node 18) — not one package with two
+major version lines. Both are built from this one branch — see
 [`CLAUDE.md`](./CLAUDE.md) §2 for how. For how a call actually flows through the SDK
 at runtime, see [`docs/architecture.md`](./docs/architecture.md).
 
-| Major | Node floor | Transport | Variant |
-| --- | --- | --- | --- |
-| `^1.0.0` | `>=8` | core `http`/`https` | `legacy` |
-| `^2.0.0` | `>=18` | global `fetch` | `modern` |
+| Package | Node floor | Transport |
+| --- | --- | --- |
+| [`@oppex/integration-sdk`](https://www.npmjs.com/package/@oppex/integration-sdk) | `>=18` | global `fetch` |
+| [`@oppex/integration-sdk-legacy`](https://www.npmjs.com/package/@oppex/integration-sdk-legacy) | `>=8` | core `http`/`https` |
 
-Install whichever major matches your runtime:
+Install whichever one matches your runtime:
 
 ```shell
-npm install @oppex/integration-sdk@^2   # Node 18+
-npm install @oppex/integration-sdk@^1   # Node 8+
+npm install @oppex/integration-sdk           # Node 18+
+npm install @oppex/integration-sdk-legacy    # Node 8+
 ```
 
-Works identically with npm, pnpm, and yarn — all three install from the same npm
-registry publish.
+Being separate packages rather than major-version lines of one package means there's
+no shared `latest` dist-tag to manage between them — each has its own, independent of
+the other's release cadence. Works identically with npm, pnpm, and yarn — all three
+install from the same npm registry publish.
 
 ## Usage
 
 ```js
+// Node 18+: const { IncidentClient, Severity } = require('@oppex/integration-sdk');
+// Node 8+:  const { IncidentClient, Severity } = require('@oppex/integration-sdk-legacy');
 const { IncidentClient, Severity } = require('@oppex/integration-sdk');
 
 const client = new IncidentClient({

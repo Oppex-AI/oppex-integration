@@ -28,6 +28,11 @@ CONSUMER_JS="$(pwd)/../.github/smoke/node/consumer.js"
 LEGACY_VERSIONS="8 16 17"
 MODERN_VERSIONS="18 20 22 24 26"
 
+# Two separate npm packages, not one package with two major version lines — this is
+# what each docker run's SDK_PACKAGE_NAME env var tells consumer.js to require().
+LEGACY_PKG_NAME="@oppex/integration-sdk-legacy"
+MODERN_PKG_NAME="@oppex/integration-sdk"
+
 # Packs the requested variant and renames the result to a fixed path, since npm pack's
 # own output filename is version-derived and each variant's package.json carries a
 # different version — a fixed name is simpler for the rest of this script to reference
@@ -56,6 +61,7 @@ run_one() {
   label="$1"
   node_version="$2"
   tgz="$3"
+  pkg_name="$4"
   platform_args=""
   if [ "$node_version" = "8" ]; then
     platform_args="--platform linux/amd64"
@@ -65,6 +71,7 @@ run_one() {
     -v "$tgz:/app/sdk.tgz:ro" \
     -v "$CONSUMER_JS:/app/consumer.js:ro" \
     -w /app \
+    -e "SDK_PACKAGE_NAME=$pkg_name" \
     "node:$node_version" \
     sh -c "npm install /app/sdk.tgz --silent && node consumer.js"
   then
@@ -75,14 +82,14 @@ run_one() {
   echo ""
 }
 
-# v1 (legacy: http/https transport, Node >=8 floor) — tested across its whole range.
+# legacy: http/https transport, Node >=8 floor — tested across its whole range.
 for v in $LEGACY_VERSIONS; do
-  run_one "legacy-node$v" "$v" "$legacy_tgz"
+  run_one "legacy-node$v" "$v" "$legacy_tgz" "$LEGACY_PKG_NAME"
 done
 
-# v2 (modern: fetch transport, Node >=18 floor) — tested across its whole range.
+# modern: fetch transport, Node >=18 floor — tested across its whole range.
 for v in $MODERN_VERSIONS; do
-  run_one "modern-node$v" "$v" "$modern_tgz"
+  run_one "modern-node$v" "$v" "$modern_tgz" "$MODERN_PKG_NAME"
 done
 
 # Anti-test: the modern tarball (fetch-only, tsc target ES2022) has no business running
@@ -94,6 +101,7 @@ if docker run --rm --platform linux/amd64 \
   -v "$modern_tgz:/app/sdk.tgz:ro" \
   -v "$CONSUMER_JS:/app/consumer.js:ro" \
   -w /app \
+  -e "SDK_PACKAGE_NAME=$MODERN_PKG_NAME" \
   node:8 \
   sh -c "npm install /app/sdk.tgz --silent && node consumer.js"
 then

@@ -138,7 +138,7 @@ unchanged even after exhausting retries — the status code already says what ha
 
 ### `Transport` (`src/internal/transport.legacy.ts` / `transport.modern.ts`)
 
-The one piece of real logic that differs between the two npm majors — see
+The one piece of real logic that differs between the two npm packages — see
 [`../CLAUDE.md`](../CLAUDE.md) §2 for the full two-variant build story. Both variants
 implement the same tiny interface:
 
@@ -149,11 +149,11 @@ interface Transport {
 }
 ```
 
-- **legacy** (`@oppex/integration-sdk@^1`, Node ≥8): core `http`/`https`, a private
+- **legacy** (`@oppex/integration-sdk-legacy`, Node ≥8): core `http`/`https`, a private
   keep-alive `Agent` per transport instance (`maxSockets: 20`), manual timeout via
   `req.setTimeout()` + `req.destroy()` — no `AbortController`, which isn't reliably
   global until Node 15.
-- **modern** (`@oppex/integration-sdk@^2`, Node ≥18): global `fetch` only, timeout via
+- **modern** (`@oppex/integration-sdk`, Node ≥18): global `fetch` only, timeout via
   `AbortSignal.timeout()`. `closeTransport()` is a no-op — `fetch`/undici exposes no
   dependency-free way to close a connection pool.
 

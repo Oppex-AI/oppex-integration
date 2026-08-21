@@ -3,16 +3,22 @@
 /*
  * Isolated external consumer for the Node.js SDK, mirroring
  * .github/smoke/java/ExternalConsumer.java: uses only the published package's public
- * surface (require('@oppex/integration-sdk'), not a relative path into this repo),
- * network-free, and prints a fixed sentinel the CI workflow greps for. The workflow
- * installs the packed tarball into a fresh throwaway project via npm, then pnpm, then
- * yarn, and runs this same script against each installation — this is what catches
- * pnpm/yarn's stricter phantom-dependency resolution that npm's flat node_modules
- * silently tolerates.
+ * surface, not a relative path into this repo, network-free, and prints a fixed
+ * sentinel the CI workflow greps for. The workflow installs the packed tarball into a
+ * fresh throwaway project via npm, then pnpm, then yarn, and runs this same script
+ * against each installation — this is what catches pnpm/yarn's stricter
+ * phantom-dependency resolution that npm's flat node_modules silently tolerates.
+ *
+ * The SDK is published as two separate npm packages, not one package with two major
+ * version lines — @oppex/integration-sdk (modern, fetch, Node >=18) and
+ * @oppex/integration-sdk-legacy (legacy, http/https, Node >=8) — so which one to
+ * require is passed in via SDK_PACKAGE_NAME rather than hardcoded, letting this one
+ * file cover both instead of needing a second, near-duplicate consumer script.
  */
 
 var assert = require('assert');
-var sdk = require('@oppex/integration-sdk');
+var packageName = process.env.SDK_PACKAGE_NAME || '@oppex/integration-sdk';
+var sdk = require(packageName);
 
 function main() {
   var IncidentClient = sdk.IncidentClient;

@@ -32,14 +32,18 @@ application shutdown — same lifecycle contract as the Java SDK.
 Real Node deployments in this SDK's support range span Node 8 through 26. Node 18 is
 the one capability boundary in that whole range with comparable significance to
 anything else (native `fetch`/`AbortController`/Web Streams) — there is no second
-boundary worth a third variant. This SDK ships as two npm majors:
+boundary worth a third variant. This SDK ships as **two separate npm packages** —
+deliberately not one package with two major version lines, so there's no shared
+`latest` dist-tag to manage between them and no risk of one variant's publish moving
+the other's `latest` backward:
 
-- **`@oppex/integration-sdk@^1`** ("legacy") — `engines.node >=8`. Transport: core
+- **`@oppex/integration-sdk`** ("modern") — `engines.node >=18`. Transport: global
+  `fetch` only, no `http`/`https` code at all. This is the package name most consumers
+  install; it holds the "default" identity.
+- **`@oppex/integration-sdk-legacy`** ("legacy") — `engines.node >=8`. Transport: core
   `http`/`https`, manual timeout (`req.setTimeout()` + `req.destroy()`). No
   `AbortController` even for the Node 15–17 portion of this variant's range — one
   uniform mechanism across the whole 8–17 span avoids an unnecessary internal branch.
-- **`@oppex/integration-sdk@^2`** ("modern") — `engines.node >=18`. Transport: global
-  `fetch` only, no `http`/`https` code at all.
 
 Earlier revisions of this SDK maintained these as two separately-pushed git branches,
 kept in sync by a script. That structure is gone. Both variants now live in **one
@@ -56,12 +60,14 @@ there is no longer a second copy of anything to drift. `node/scripts/build-varia
 <legacy|modern>` stages the requested variant's files into their canonical top-level
 locations and builds — see §6.
 
-**Maintenance policy**: "legacy" receives security/critical patches only. "modern" is
-where active feature development happens. This is standard practice (same as
-Stripe/Twilio/AWS SDK version-floor raises), not a permanent commitment to maintaining
-two diverging feature sets — a genuinely new capability boundary (a future Node LTS
-introducing something comparable to `fetch`) would justify a third variant later,
-following the same reasoning, not a speculative one added now.
+**Maintenance policy**: "legacy" (`@oppex/integration-sdk-legacy`) receives
+security/critical patches only. "modern" (`@oppex/integration-sdk`) is where active
+feature development happens. This is standard practice (same shape as
+Stripe/Twilio/AWS SDK version-floor raises, just expressed as a second package name
+instead of a second major), not a permanent commitment to maintaining two diverging
+feature sets — a genuinely new capability boundary (a future Node LTS introducing
+something comparable to `fetch`) would justify a third variant later, following the
+same reasoning, not a speculative one added now.
 
 ## 3. Why flat, not core/http/bundle like Java
 
@@ -388,20 +394,17 @@ have once the PR is merged:
 ```shell
 git checkout master && git pull
 cd node
-./scripts/build-variant.sh legacy && npm publish --tag legacy
+./scripts/build-variant.sh legacy && npm publish
 ./scripts/build-variant.sh modern && npm publish
 ```
 
-**A legacy publish must always use `npm publish --tag legacy`**, never bare `npm
-publish`. Without it, npm's `latest` dist-tag tracks *most recently published*, not
-*highest version* — publishing a 1.x patch after 2.x is already out would silently move
-`latest` backward, so a bare `npm install @oppex/integration-sdk` (no version
-specified) would install the older major. Only a modern-variant publish should ever go
-to bare `latest`.
-
-There is no automated guard against giving the legacy variant a version number in the
-`2.x.x`-or-higher range that semantically belongs to the modern variant's lineage, or
-vice versa — that discipline stays manual, same as before.
+Both are plain `npm publish` — no `--tag` gymnastics needed. That used to matter when
+both variants shared one package name and npm's `latest` dist-tag tracked *most
+recently published, not highest version* (publishing a 1.x patch after 2.x was already
+out would have silently moved `latest` backward). Being two separate package names
+(`@oppex/integration-sdk` and `@oppex/integration-sdk-legacy`) removes that risk
+structurally: each has its own independent `latest`, so there's nothing for one
+variant's publish to move backward on the other's behalf.
 
 ## 9. `close()` and `CLOSE_DRAIN_TIMEOUT_MS`
 
