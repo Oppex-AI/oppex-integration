@@ -80,20 +80,22 @@ doing both:
   ```
 
   This is the one used in CI: `.github/workflows/node-compatibility.yml`'s matrix runs
-  this exact script, unmodified, for every `{variant, node}` combination — so a local
-  run and a CI run exercise identical logic.
+  this exact script, unmodified, against every `matrix.node` version (after first
+  building under one fixed modern Node — see `CLAUDE.md` §7 for why).
 
-- **`scripts/release.sh <legacy-version|-> <modern-version|->`** — cuts a release.
-  Runs only on the current branch (in practice, always `master`, the only long-lived
-  branch), bumps the version(s), calls `build-variant.sh` internally to verify the bump
-  *before* committing, then creates `node-release-X.Y.Z` as a plain branch pointing at
-  that commit:
+- **`scripts/build-all.sh`** — builds and tests **both** variants in one run, before
+  raising a PR (or before publishing). There's no release-branch mechanism and no
+  script that bumps a version for you: a version bump is a plain, reviewed edit to
+  `variants/<variant>/package.json`, made like any other change in the PR. This
+  script's job is to verify both variants still build and pass after whatever changed,
+  and to sync each variant's committed `package-lock.json` to match:
 
   ```shell
-  scripts/release.sh 1.0.1 2.1.0   # release both
-  scripts/release.sh 1.0.1 -       # "-" skips a variant
+  scripts/build-all.sh
   ```
 
+  Releases happen straight from `master` once a version-bump PR merges — no branch to
+  cut or check out. See [`CLAUDE.md`](./CLAUDE.md) §8 for the exact publish steps.
+
 See [`CLAUDE.md`](./CLAUDE.md) for the engineering rationale behind the two-variant
-structure, the release branch lifecycle, and documented behavioral differences from
-the Java SDK.
+structure and documented behavioral differences from the Java SDK.

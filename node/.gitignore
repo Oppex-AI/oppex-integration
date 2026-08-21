@@ -1,4 +1,6 @@
 dist/
+dist-legacy/
+dist-modern/
 node_modules/
 *.log
 
