@@ -8,8 +8,10 @@ export interface IncidentRequestInput {
   severity: Severity | number;
   priority?: number;
   srcTimestamp?: number;
-  serviceKey?: string;
-  tenant?: string;
+  // null (or '') is a deliberate, valid signal distinct from omitting the field
+  // entirely: it means "no service key for this call," which Oppex reads as an
+  // explicit request to auto-route rather than "not specified, use the client's."
+  serviceKey?: string | null;
   component?: string;
   group?: string;
   type?: string;
@@ -22,8 +24,7 @@ export interface IncidentRequest {
   readonly severity: Severity;
   readonly priority: number;
   readonly srcTimestamp: number;
-  readonly serviceKey?: string;
-  readonly tenant?: string;
+  readonly serviceKey?: string | null;
   readonly component?: string;
   readonly group?: string;
   readonly type?: string;
@@ -43,6 +44,23 @@ function optionalNonBlank(value: unknown, field: string): string | undefined {
   }
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new InvalidRequestError(`${field} must be non-blank when supplied`);
+  }
+  return value;
+}
+
+/** Unlike optionalNonBlank, a blank string is a valid, meaningful value here — not
+ * rejected — since '' and null both mean "auto-route," the same as omitting the field
+ * means "use the client's default." Only a wrong type (not a string, not null, not
+ * undefined) is a real error. */
+function nullableString(value: unknown, field: string): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw new InvalidRequestError(`${field} must be a string, null, or omitted`);
   }
   return value;
 }
@@ -84,8 +102,7 @@ export function buildIncidentRequest(input: IncidentRequestInput): IncidentReque
     severity,
     priority,
     srcTimestamp,
-    serviceKey: optionalNonBlank(input.serviceKey, 'serviceKey'),
-    tenant: optionalNonBlank(input.tenant, 'tenant'),
+    serviceKey: nullableString(input.serviceKey, 'serviceKey'),
     component: optionalNonBlank(input.component, 'component'),
     group: optionalNonBlank(input.group, 'group'),
     type: optionalNonBlank(input.type, 'type'),

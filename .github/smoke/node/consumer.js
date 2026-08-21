@@ -14,10 +14,20 @@
  * @oppex/integration-sdk-legacy (legacy, http/https, Node >=8) — so which one to
  * require is passed in via SDK_PACKAGE_NAME rather than hardcoded, letting this one
  * file cover both instead of needing a second, near-duplicate consumer script.
+ *
+ * "Network-free" doesn't mean "never actually attempts an HTTP call" — a blank title
+ * only ever exercises the validation-failure path, never the transport. Port 1 on
+ * loopback reliably refuses the connection immediately (nothing listens there), so a
+ * fully valid request pointed at it still reaches the real transport.sendRequest call
+ * and fails there, genuinely exercising that path without depending on real network
+ * access or touching the actual Oppex service.
  */
 
 var assert = require('assert');
 var packageName = process.env.SDK_PACKAGE_NAME || '@oppex/integration-sdk';
+
+process.env.OPPEX_TEST_ENDPOINT_URL = 'http://127.0.0.1:1';
+
 var sdk = require(packageName);
 
 function main() {
@@ -27,20 +37,32 @@ function main() {
   assert.strictEqual(typeof IncidentClient, 'function', 'IncidentClient export missing');
   assert.strictEqual(Severity.MEDIUM, 3, 'unexpected severity mapping');
 
-  var client = new IncidentClient({
-    apiKey: 'external-consumer-api-key',
-    serviceKey: 'external-consumer-service-key',
-    tenant: 'external-consumer-tenant',
-  });
+  // Deliberately wrong-looking credentials — the point of this first check is
+  // reaching the real transport call and having THAT fail (connection refused), not a
+  // credentials-shaped validation error.
+  var badClient = new IncidentClient({ apiKey: 'wrong-api-key', serviceKey: 'wrong-service-key' });
 
-  // Network-free, like the Java consumer: an invalid request (blank title) resolves via
-  // validation before any HTTP attempt, so this never reaches the real Oppex service —
-  // and it exercises the "never throws" contract as the smoke assertion itself.
-  return client
-    .sendIncident({ title: '', source: 'github-actions', severity: Severity.MEDIUM })
+  return badClient
+    .sendIncident({ title: 'valid title', source: 'github-actions', severity: Severity.MEDIUM })
     .then(function (response) {
-      assert.strictEqual(response.successful, false, 'invalid request must resolve failed, not throw');
-      return client.close();
+      assert.strictEqual(response.successful, false, 'a real transport failure must resolve failed, not throw');
+      assert.strictEqual(response.code, -1, 'a connection failure must resolve with code -1');
+      return badClient.close();
+    })
+    .then(function () {
+      var client = new IncidentClient({
+        apiKey: 'external-consumer-api-key',
+        serviceKey: 'external-consumer-service-key',
+      });
+
+      // Invalid request (blank title) resolves via validation before any HTTP
+      // attempt, exercising the "never throws" contract from that side too.
+      return client
+        .sendIncident({ title: '', source: 'github-actions', severity: Severity.MEDIUM })
+        .then(function (response) {
+          assert.strictEqual(response.successful, false, 'invalid request must resolve failed, not throw');
+          return client.close();
+        });
     })
     .then(function () {
       console.log('EXTERNAL_CONSUMER_OK node=' + process.version);

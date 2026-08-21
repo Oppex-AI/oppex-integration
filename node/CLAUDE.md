@@ -21,7 +21,7 @@ POST https://api.oppex.ai/api/v1/incident/post
 ```
 
 ```js
-const client = new IncidentClient({ apiKey, serviceKey, tenant });
+const client = new IncidentClient({ apiKey, serviceKey });
 ```
 
 Create one client per application, reuse it concurrently, and close it during
@@ -155,9 +155,25 @@ differences from Java, each decided explicitly rather than left as an accident:
   messages and response `message` fields, never thrown across the public boundary,
   never exported. There is no Java-`IncidentException` equivalent and no `instanceof`
   check a consumer would need. The one exception: the `IncidentClient` **constructor**
-  still throws synchronously on a missing/blank `apiKey`/`serviceKey`/`tenant` — matches
-  Java's builder validating at `build()`, and the "never throws" guarantee is scoped to
-  the two send methods, not to misusing the constructor itself.
+  still throws synchronously on a missing/blank `apiKey`, or a `serviceKey` of the
+  wrong type — matches Java's builder validating at `build()`, and the "never throws"
+  guarantee is scoped to the two send methods, not to misusing the constructor itself.
+- **No `tenant` field anywhere** — removed entirely (client construction, per-request
+  override, and the wire payload) to match Java's current contract after PR #2
+  (`refactor!: remove tenant configuration from IncidentClient and all examples`),
+  whose own `CLAUDE.md` now states plainly: "Tenant is not a separate input and is not
+  sent on the wire." This landed on `master` while the Node SDK was being built on a
+  separate branch — brought into parity once master's current state was checked.
+- **`serviceKey` is optional, and `null`/`''` are valid, deliberate values — not
+  errors.** This is a Node-specific addition, not (yet) mirrored in Java: omitting
+  `serviceKey`, or explicitly passing `null`/`''` (at the client level, or as a
+  per-request override), all mean "auto-route this on the Oppex side" and are sent on
+  the wire literally, not silently dropped or coerced. An **omitted** per-request
+  `serviceKey` still falls back to the client's default, same as always — the
+  distinction is `undefined` (not specified, use the client's) vs. an *explicit*
+  `null`/`''` (deliberately overriding to "no key for this call"), which `deliver()`
+  checks with `=== undefined` rather than `??` specifically so `null` isn't treated
+  the same as "not specified."
 - **`sendIncidentAsync` accepts optional `onSuccess`/`onError` callbacks** — a pure
   observation hook invoked synchronously from inside the same catch-everything path;
   supplying them (or not) never changes the never-throws guarantee. Java's
@@ -197,7 +213,13 @@ differences from Java, each decided explicitly rather than left as an accident:
   Java's `HttpExecutorTest` runs against the JDK's local `HttpServer` rather than the
   real Oppex service — without adding a configurable-endpoint knob to the public
   `IncidentClientOptions` type, which `java/CLAUDE.md` §16 explicitly forbids doing
-  "solely to simplify testing."
+  "solely to simplify testing." `test/smoke.js` and `.github/smoke/node/consumer.js`
+  both set this to `http://127.0.0.1:1` (a loopback port nothing listens on, so the
+  connection is refused immediately) for exactly one request each — deliberately
+  reaching the *real* `transport.sendRequest` call and letting it genuinely fail,
+  rather than only ever exercising the validation-failure path via a blank title. Still
+  "network-free" in the sense that matters: no real network access required, no
+  traffic to the actual Oppex service.
 
 ## 6. Directory layout
 

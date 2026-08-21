@@ -57,7 +57,6 @@ async function main() {
           'severity',
           'priority',
           'srcTimestamp',
-          'tenant',
         ]);
         assert.strictEqual(req.headers['x-api-key'], 'k');
         assert.strictEqual(req.headers['content-type'], 'application/json');
@@ -66,7 +65,7 @@ async function main() {
       });
     },
     async function (sdk) {
-      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
       var res = await client.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.HIGH });
       assert.strictEqual(res.successful, true);
       assert.strictEqual(res.incidentId, 'inc-1');
@@ -81,7 +80,7 @@ async function main() {
       res.end(JSON.stringify({ success: false, code: 401, message: 'unauthorized' }));
     },
     async function (sdk) {
-      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
       var res = await client.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
       assert.strictEqual(res.successful, false);
       assert.strictEqual(res.code, 401);
@@ -98,7 +97,7 @@ async function main() {
       res.end('<html>Bad Gateway</html>');
     },
     async function (sdk) {
-      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
       var res = await client.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
       assert.strictEqual(res.successful, false);
       assert.strictEqual(res.code, 502);
@@ -122,7 +121,7 @@ async function main() {
       };
     })(),
     async function (sdk) {
-      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
       var res = await client.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
       assert.strictEqual(res.successful, true);
       await client.close();
@@ -134,7 +133,7 @@ async function main() {
     process.env.OPPEX_TEST_ENDPOINT_URL = 'http://127.0.0.1:1';
     clearDistCache();
     var sdk5 = require(path.join(DIST_DIR, 'index.js'));
-    var client5 = new sdk5.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+    var client5 = new sdk5.IncidentClient({ apiKey: 'k', serviceKey: 's' });
     var res5 = await client5.sendIncident({ title: 'a', source: 'b', severity: sdk5.Severity.LOW });
     assert.strictEqual(res5.successful, false);
     assert.strictEqual(res5.code, -1);
@@ -155,7 +154,7 @@ async function main() {
       }
       process.on('unhandledRejection', onUnhandled);
 
-      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', tenant: 't' });
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
       var sawSuccess = false;
       client.sendIncidentAsync(
         { title: 'a', source: 'b', severity: sdk.Severity.LOW },
@@ -169,6 +168,35 @@ async function main() {
       process.removeListener('unhandledRejection', onUnhandled);
       assert.strictEqual(sawSuccess, true, 'onSuccess must fire before close() resolves');
       assert.strictEqual(sawUnhandled, false, 'must never produce an unhandled rejection');
+    },
+  );
+
+  // 7. serviceKey: constructor accepts an omitted serviceKey (not an error); an
+  // explicit per-request null overrides a real client-level serviceKey and is sent on
+  // the wire literally, rather than falling back to the client's key.
+  await withServer(
+    function (req, res) {
+      var chunks = [];
+      req.on('data', function (c) {
+        chunks.push(c);
+      });
+      req.on('end', function () {
+        var body = Buffer.concat(chunks).toString('utf8');
+        var parsed = JSON.parse(body);
+        assert.strictEqual(parsed.serviceKey, null, 'an explicit null request.serviceKey must override the client key, not fall back to it');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, code: 200 }));
+      });
+    },
+    async function (sdk) {
+      // no serviceKey at all — must not throw.
+      var noKeyClient = new sdk.IncidentClient({ apiKey: 'k' });
+      await noKeyClient.close();
+
+      var client = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 'real-client-key' });
+      var res = await client.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW, serviceKey: null });
+      assert.strictEqual(res.successful, true);
+      await client.close();
     },
   );
 

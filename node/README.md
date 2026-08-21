@@ -38,8 +38,7 @@ const { IncidentClient, Severity } = require('@oppex/integration-sdk');
 
 const client = new IncidentClient({
   apiKey: 'api-key',
-  serviceKey: 'service-key',
-  tenant: 'tenant',
+  serviceKey: 'service-key', // optional — omit, or pass null/'', to auto-route on Oppex
 });
 
 // Waits for the result. Never throws or rejects, for any reason — an invalid

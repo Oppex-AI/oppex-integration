@@ -2,19 +2,24 @@ import { IncidentRequest } from '../../model/IncidentRequest';
 import { IncidentResponse } from '../../model/IncidentResponse';
 
 /** Fixed wire field order: serviceKey, title, source, severity, priority, srcTimestamp,
- * tenant, then optional component, group, type, detailsJSON — each optional key
- * omitted entirely (not sent as null) when unset. Relies on plain-object key insertion
- * order, which JSON.stringify preserves for string keys. */
+ * then optional component, group, type, detailsJSON. Relies on plain-object key
+ * insertion order, which JSON.stringify preserves for string keys.
+ *
+ * serviceKey is assigned unconditionally, not gated on `!== undefined` the way the
+ * other optional fields below are — null and '' are both meaningful, deliberate wire
+ * values (Oppex reads either as "auto-route this incident"), not absence. Only a
+ * truly undefined serviceKey (never set on the client or overridden per-call) gets
+ * dropped from the JSON, which happens automatically: JSON.stringify omits any object
+ * property whose value is undefined, but still serializes null and '' literally. */
 export function serializeRequest(request: IncidentRequest): string {
   const ordered: Record<string, unknown> = {};
 
-  if (request.serviceKey !== undefined) ordered.serviceKey = request.serviceKey;
+  ordered.serviceKey = request.serviceKey;
   ordered.title = request.title;
   ordered.source = request.source;
   ordered.severity = request.severity;
   ordered.priority = request.priority;
   ordered.srcTimestamp = request.srcTimestamp;
-  if (request.tenant !== undefined) ordered.tenant = request.tenant;
 
   if (request.component !== undefined) ordered.component = request.component;
   if (request.group !== undefined) ordered.group = request.group;

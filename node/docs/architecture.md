@@ -86,18 +86,23 @@ backoff sleeps) before that slot frees up for the next queued task.
 The façade, and the only class a consumer instantiates. Holds three pieces of
 per-instance state:
 
-- `apiKey`/`serviceKey`/`tenant` — validated once, synchronously, in the constructor.
-  This is the **one** place the SDK still throws — the "never throws" guarantee is
-  scoped to `sendIncident`/`sendIncidentAsync`, not to misusing the constructor.
+- `apiKey`/`serviceKey` — validated once, synchronously, in the constructor. `apiKey`
+  is mandatory; `serviceKey` is optional, and `null`/`''` are valid values in their own
+  right (they mean "auto-route on Oppex"), not errors — only a wrong type throws. This
+  is the **one** place the SDK still throws — the "never throws" guarantee is scoped to
+  `sendIncident`/`sendIncidentAsync`, not to misusing the constructor.
 - `dispatcher` — a private `AsyncDispatcher()`, used only by `sendIncidentAsync`.
 - `transport` — a private, per-instance transport (see below). Each `IncidentClient`
   owns its own transport instance specifically so that one client's `close()` can
   never affect a different, still-active client's in-flight sockets.
 
 `sendIncident` and `sendIncidentAsync` both funnel through the same private
-`deliver()` method, which does three things: attach the client's `serviceKey`/`tenant`
-defaults (a per-call `request.serviceKey`/`tenant` can override them), serialize the
-payload, and run the actual HTTP attempt through `executeWithRetry`. Every failure
+`deliver()` method, which does three things: resolve the client's `serviceKey` default
+(a per-call `request.serviceKey` can override it — but only if it's actually
+*specified*; `undefined` falls back to the client's value, while an explicit
+`null`/`''` overrides to "no key for this call" and is never replaced by the client's
+default), serialize the payload, and run the actual HTTP attempt through
+`executeWithRetry`. Every failure
 mode `deliver()` can produce — a network error, a retryable status that exhausted
 retries, a non-retryable status — is represented as a plain `DeliveryFailure` object
 (`{ retryable, code, message }`) thrown internally and caught at the boundary, never
@@ -119,9 +124,13 @@ serialize to `null` on the wire with no error ever surfaced.
 Two pure functions, no I/O:
 
 - `serializeRequest` — builds the JSON payload with a **fixed key order**
-  (`serviceKey, title, source, severity, priority, srcTimestamp, tenant, component,
-  group, type, detailsJSON`), omitting any unset optional field entirely rather than
-  sending it as `null`.
+  (`serviceKey, title, source, severity, priority, srcTimestamp, component, group,
+  type, detailsJSON`). Most optional fields are omitted entirely when unset rather
+  than sent as `null` — except `serviceKey`, which is assigned unconditionally: a
+  truly unset `serviceKey` (never specified anywhere) still gets dropped by
+  `JSON.stringify`'s own handling of `undefined`, but an explicit `null` or `''` is
+  sent on the wire literally, since Oppex reads either as "auto-route this incident,"
+  a real, meaningful value rather than an absence.
 - `parseResponse` — turns an HTTP status + body into an `IncidentResponse`. If the body
   isn't valid JSON (e.g. a proxy or WAF returned an HTML error page), it falls back to
   a generic `"Received a non-JSON response (status N)"` message — deliberately never

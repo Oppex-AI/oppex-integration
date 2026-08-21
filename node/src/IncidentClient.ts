@@ -10,8 +10,10 @@ import { createTransport } from './internal/transport';
 
 export interface IncidentClientOptions {
   apiKey: string;
-  serviceKey: string;
-  tenant: string;
+  // Optional, and null/'' are valid, deliberate values — not errors. Omitted, null,
+  // or '' all mean every call from this client auto-routes on the Oppex side unless a
+  // specific call overrides it with its own serviceKey.
+  serviceKey?: string | null;
 }
 
 export interface SendIncidentAsyncCallbacks {
@@ -59,8 +61,7 @@ function toFailedResponse(err: unknown): IncidentResponse {
  */
 export class IncidentClient {
   private readonly apiKey: string;
-  private readonly serviceKey: string;
-  private readonly tenant: string;
+  private readonly serviceKey: string | null | undefined;
   private readonly dispatcher = new AsyncDispatcher();
   // Each client gets its own transport instance — a shared, module-level pool would
   // mean one client's close() destroys sockets a different, still-active client is
@@ -75,15 +76,17 @@ export class IncidentClient {
     if (!options || typeof options.apiKey !== 'string' || options.apiKey.trim().length === 0) {
       throw new InvalidRequestError('apiKey is required');
     }
-    if (typeof options.serviceKey !== 'string' || options.serviceKey.trim().length === 0) {
-      throw new InvalidRequestError('serviceKey is required');
-    }
-    if (typeof options.tenant !== 'string' || options.tenant.trim().length === 0) {
-      throw new InvalidRequestError('tenant is required');
+    // serviceKey is optional here, and null/'' are valid values (they mean
+    // auto-route), not errors — only a wrong type is rejected.
+    if (
+      options.serviceKey !== undefined &&
+      options.serviceKey !== null &&
+      typeof options.serviceKey !== 'string'
+    ) {
+      throw new InvalidRequestError('serviceKey must be a string, null, or omitted');
     }
     this.apiKey = options.apiKey;
     this.serviceKey = options.serviceKey;
-    this.tenant = options.tenant;
   }
 
   /**
@@ -167,9 +170,13 @@ export class IncidentClient {
   }
 
   private async deliver(request: IncidentRequest): Promise<IncidentResponse> {
-    const serviceKey = request.serviceKey ?? this.serviceKey;
-    const tenant = request.tenant ?? this.tenant;
-    const payload = serializeRequest({ ...request, serviceKey, tenant });
+    // request.serviceKey === undefined means "not specified for this call" -> fall
+    // back to the client's default. An explicit null or '' is a deliberate override
+    // in its own right (auto-route this specific call) and must NOT fall back — `??`
+    // would incorrectly treat null the same as undefined here, so this uses an exact
+    // `=== undefined` check instead.
+    const serviceKey = request.serviceKey === undefined ? this.serviceKey : request.serviceKey;
+    const payload = serializeRequest({ ...request, serviceKey });
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json',

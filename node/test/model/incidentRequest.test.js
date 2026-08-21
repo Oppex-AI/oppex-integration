@@ -64,9 +64,21 @@ expectThrows(function () {
   buildIncidentRequest({ title: 'a', source: 'x', severity: 2, srcTimestamp: NaN });
 }, 'srcTimestamp');
 
+// serviceKey: unlike component/group/type/details, null and '' are valid values in
+// their own right (auto-route), not rejected the way a blank component/group/etc. is.
+// Only a wrong type is an error.
 expectThrows(function () {
-  buildIncidentRequest({ title: 'a', source: 'x', severity: 2, tenant: '   ' });
-}, 'tenant');
+  buildIncidentRequest({ title: 'a', source: 'x', severity: 2, serviceKey: 123 });
+}, 'serviceKey');
+
+var withNullServiceKey = buildIncidentRequest({ title: 'a', source: 'x', severity: 2, serviceKey: null });
+assert.strictEqual(withNullServiceKey.serviceKey, null, 'null serviceKey must pass through, not throw or get coerced');
+
+var withEmptyServiceKey = buildIncidentRequest({ title: 'a', source: 'x', severity: 2, serviceKey: '' });
+assert.strictEqual(withEmptyServiceKey.serviceKey, '', 'empty-string serviceKey must pass through, not throw');
+
+var withOmittedServiceKey = buildIncidentRequest({ title: 'a', source: 'x', severity: 2 });
+assert.strictEqual(withOmittedServiceKey.serviceKey, undefined, 'an omitted serviceKey stays undefined, distinct from null');
 
 // Defaults
 var req = buildIncidentRequest({ title: 'a', source: 'x', severity: 2 });
@@ -82,14 +94,12 @@ var full = buildIncidentRequest({
   priority: 3,
   srcTimestamp: 12345,
   serviceKey: 'sk',
-  tenant: 't',
   component: 'c',
   group: 'g',
   type: 'ty',
   details: '{"k":"v"}',
 });
 assert.strictEqual(full.serviceKey, 'sk');
-assert.strictEqual(full.tenant, 't');
 assert.strictEqual(full.component, 'c');
 assert.strictEqual(full.group, 'g');
 assert.strictEqual(full.type, 'ty');

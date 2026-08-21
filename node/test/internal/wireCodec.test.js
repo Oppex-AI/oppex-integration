@@ -15,7 +15,6 @@ var full = serializeRequest({
   severity: 4,
   priority: 2,
   srcTimestamp: 999,
-  tenant: 'tn',
   component: 'c',
   group: 'g',
   type: 'ty',
@@ -24,12 +23,15 @@ var full = serializeRequest({
 var parsedFull = JSON.parse(full);
 assert.deepStrictEqual(
   Object.keys(parsedFull),
-  ['serviceKey', 'title', 'source', 'severity', 'priority', 'srcTimestamp', 'tenant', 'component', 'group', 'type', 'detailsJSON'],
+  ['serviceKey', 'title', 'source', 'severity', 'priority', 'srcTimestamp', 'component', 'group', 'type', 'detailsJSON'],
   'field order must match exactly',
 );
 assert.strictEqual(parsedFull.detailsJSON, '{"a":1}');
 
-// Optional fields omitted entirely (not sent as null) when unset
+// serviceKey: undefined (never specified anywhere) is dropped from the wire entirely,
+// same as component/group/type/details when unset — but null and '' are NOT treated
+// the same as undefined. They are meaningful values in their own right (Oppex reads
+// either as "auto-route this incident") and must be sent on the wire literally.
 var minimal = serializeRequest({
   title: 't',
   source: 's',
@@ -39,9 +41,18 @@ var minimal = serializeRequest({
 });
 var parsedMinimal = JSON.parse(minimal);
 assert.deepStrictEqual(Object.keys(parsedMinimal), ['title', 'source', 'severity', 'priority', 'srcTimestamp']);
-assert.ok(!('serviceKey' in parsedMinimal));
-assert.ok(!('tenant' in parsedMinimal));
+assert.ok(!('serviceKey' in parsedMinimal), 'a truly undefined serviceKey must be dropped, not sent as null');
 assert.ok(!('detailsJSON' in parsedMinimal));
+
+var nullServiceKey = JSON.parse(
+  serializeRequest({ title: 't', source: 's', severity: 1, priority: 1, srcTimestamp: 1, serviceKey: null }),
+);
+assert.strictEqual(nullServiceKey.serviceKey, null, 'an explicit null serviceKey must be sent literally, not dropped');
+
+var emptyServiceKey = JSON.parse(
+  serializeRequest({ title: 't', source: 's', severity: 1, priority: 1, srcTimestamp: 1, serviceKey: '' }),
+);
+assert.strictEqual(emptyServiceKey.serviceKey, '', 'an explicit empty-string serviceKey must be sent literally, not dropped');
 
 // parseResponse: well-formed JSON
 var ok = parseResponse(200, JSON.stringify({ success: true, code: 200, message: 'ok', data: 'inc-1' }));
