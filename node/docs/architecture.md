@@ -18,7 +18,7 @@ never throws or rejects from its two public send methods, by design.
 ```text
 IncidentClient                         (façade — the only class consumers touch)
  ├─ buildIncidentRequest()             (model/IncidentRequest.ts — validate + normalize)
- ├─ resolveLogger()                    (internal/logging — resolved once, used everywhere below)
+ ├─ logger                             (Logger.ts — one shared singleton, used everywhere below)
  ├─ AsyncDispatcher                    (internal/async — bounds fire-and-forget work)
  │   └─ RateLimitedDropLogger          (internal/async — one log line per overload, not one per drop)
  ├─ executeWithRetry()                 (internal/retry/RetryExecutor.ts — the retry loop)
@@ -194,34 +194,49 @@ emits at most one `"Dropped N incidents in the last minute."` line per interval 
 rather than one log line per dropped incident — the difference between one line and a
 log-flooding incident during a real overload.
 
-### `resolveLogger` (`src/internal/logging/resolveLogger.ts`)
+### `Logger` (`src/Logger.ts`)
 
-Every internal log call in this SDK — a validation warning, a delivery failure, an
-overload notice from `AsyncDispatcher` — goes through one `logger` object, resolved
-exactly **once**, at `IncidentClient` construction time, from the caller's
-`IncidentClientOptions.logger` (an `IncidentClientLogger`: `{ error?, warn?, info?,
-debug? }`, deliberately shaped to match `console` so a Winston/Pino instance is a
-drop-in value with no adapter code).
+The one exception to "no shared state across `IncidentClient` instances" (see the
+invariants below) — deliberately. Every internal log call in this SDK — a validation
+warning, a delivery failure, an overload notice from `AsyncDispatcher` — goes through
+one exported singleton, `logger`, not something separately resolved per client.
 
-`resolveLogger` produces a fully-populated object where every one of the four levels
-is guaranteed present and safe to call — every other call site in the SDK then calls
-`logger.warn(...)`/`logger.error(...)` directly, with no per-call existence check or
-try/catch of its own. Two things are handled centrally, here, rather than at each of
-those call sites:
+`Logger`'s public shape (`error`/`warn`/`info`/`debug`, all optional on whatever gets
+passed to `setLogger()`) deliberately matches `console` — and therefore Winston,
+Pino, Bunyan — so a host's existing logger is a drop-in value, no adapter code needed.
+Redirect it directly (`logger.setLogger(winstonInstance)`) or by passing `logger` in
+any `IncidentClient`'s constructor options, which internally just calls
+`setLogger(...)` on the same shared instance. Constructing a second `IncidentClient`
+with a *different* `logger` overwrites it for every client already using this SDK in
+the process, not just the new one — there is only one `Logger`.
 
-- **A level the host didn't implement** falls back to `console`'s *matching* method
-  individually — `console` is the bare-minimum default per level, not an
-  all-or-nothing swap for a logger that only implements some of the four.
+Two things are handled once, inside `Logger` itself, not at each call site:
+
+- **A level the current logger doesn't implement** falls back to `console`'s
+  *matching* method individually — `console` is the bare-minimum default per level,
+  not an all-or-nothing swap for a logger that only implements some of the four.
 - **A method that throws when actually called** is caught and swallowed — a
   misbehaving host-supplied logger must never crash the SDK's own internal logging,
   the same reasoning that already guards a caller's `onSuccess`/`onError` callback.
 
-Severity is decided by `IncidentClient`'s own `logCaught()`, based on error *type*:
-`InvalidRequestError`/`ClientClosedError` (a caller's own mistake) log at `warn`;
-everything else caught (a delivery failure, a misbehaving callback, a genuine bug)
-logs at `error`. The SDK never adds its own level-filtering on top of this — no
-`minLogLevel` option — since Winston/Pino/etc. already have their own threshold
-configuration, and a second filter here would take that decision away from the host.
+Every other call site — `IncidentClient`, `AsyncDispatcher`'s overload/force-drop
+notices — just calls `logger.warn(...)`/`logger.error(...)` directly, with no
+existence check of its own.
+
+Severity is chosen explicitly at each call site in `sendIncident`/`sendIncidentAsync`,
+not guessed afterward from an error's type. Each `try`/`catch` there covers exactly
+one known situation — a closed-client call, a validation failure, a misbehaving
+`onSuccess`/`onError` callback, or an unanticipated failure from `deliver()` — and
+logs at the level that situation calls for directly: a caller's own mistake logs at
+`warn`; a genuinely unanticipated failure (`deliver()` only ever rethrows for one —
+every ordinary delivery outcome already resolves as a normal response) or an
+already-known delivery failure logs at `error`. There's no shared "catch broadly,
+then classify by `instanceof`" helper — by the time something reaches a `catch` block
+here, the surrounding code already knows exactly what could have caused it.
+
+The SDK never adds its own level-filtering on top of this — no `minLogLevel` option —
+since Winston/Pino/etc. already have their own threshold configuration, and a second
+filter here would take that decision away from the host.
 
 ### Shutdown: `close()`
 
@@ -241,9 +256,11 @@ client. See [`../CLAUDE.md`](../CLAUDE.md) §9 for the full reasoning.
 - **Never throws, never rejects** — `sendIncident`/`sendIncidentAsync` only. Every
   failure mode becomes a normal `IncidentResponse` (`successful: false`) or, for the
   async path, a log line plus an optional `onError` callback invocation.
-- **No shared mutable state across `IncidentClient` instances** — no module-level
-  transport pool, no global dispatcher. Two clients in the same process are fully
-  independent; closing one never affects the other.
+- **No shared mutable state across `IncidentClient` instances, except logging.** No
+  module-level transport pool, no global dispatcher — two clients in the same process
+  are otherwise fully independent, and closing one never affects the other. The one
+  deliberate exception is the `Logger` singleton (see above): every client in a
+  process shares the same one, by design.
 - **Retry policy is fixed, not configurable** — every caller gets the same predictable
   behavior; there is no `maxRetries`/`timeoutMs` constructor option to accidentally
   misconfigure.

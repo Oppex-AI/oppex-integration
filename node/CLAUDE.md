@@ -174,38 +174,53 @@ differences from Java, each decided explicitly rather than left as an accident:
   `null`/`''` (deliberately overriding to "no key for this call"), which `deliver()`
   checks with `=== undefined` rather than `??` specifically so `null` isn't treated
   the same as "not specified."
-- **`IncidentClientOptions.logger` — an injectable, leveled logging hook, absent from
-  Java entirely.** Java gets host-logging integration close to free via
+- **A central, process-wide `Logger` singleton (`src/Logger.ts`), absent from Java
+  entirely.** Java gets host-logging integration close to free via
   `java.util.logging.Logger`, a JDK-standard extension point every Java host can
   bridge into Logback/Log4j2 without any special support from this SDK. Node has no
-  equivalent ecosystem-wide facade, so achieving the same practical integrability here
-  requires an explicit hook: `IncidentClientLogger` (`src/model/IncidentClientLogger.ts`)
-  is `{ error?, warn?, info?, debug? }`, deliberately shaped to match `console` (and
-  therefore Winston, Pino, Bunyan — all real loggers already expose exactly these four
-  lowercase method names) so a host's existing logger is a drop-in value, never
-  requiring adapter code.
+  equivalent ecosystem-wide facade, so this SDK exports one instead: `export const
+  logger = new Logger()`. Every internal log call, in every part of this SDK
+  (`IncidentClient`, `AsyncDispatcher`'s overload/force-drop notices, everything),
+  goes through this one shared object — not something separately resolved per
+  `IncidentClient` instance.
 
-  Resolved exactly once, at construction time, via
-  `resolveLogger()` (`src/internal/logging/resolveLogger.ts`) into a fully-populated
-  object where every level is guaranteed present and safe to call — every other call
-  site in this SDK (including `AsyncDispatcher`'s overload/force-drop notices, wired
-  through the same resolved logger) then calls `logger.warn(...)`/`logger.error(...)`
-  directly, with no per-call existence check of its own. Two failure modes are handled
-  once, centrally, rather than at every call site: a level the host didn't implement
-  falls back to `console`'s *matching* method individually (not console for
-  everything — `console` is the bare-minimum default per level, not an all-or-nothing
-  swap for a partially-implemented logger), and a method that throws when actually
-  called is caught and swallowed, same reasoning as guarding a caller's
-  `onSuccess`/`onError` callback — a broken logging integration must never crash the
-  SDK's own "never throws" guarantee.
+  `Logger`'s shape (`error`/`warn`/`info`/`debug`, all optional on whatever gets
+  passed to `setLogger()`) deliberately matches `console` — and therefore Winston,
+  Pino, Bunyan, since real loggers already expose exactly these four lowercase method
+  names — so a host's existing logger is a drop-in value, no adapter code needed.
+  Redirect it either directly (`import { logger } from '@oppex/integration-sdk';
+  logger.setLogger(winstonInstance);`) or by passing `logger` in any
+  `IncidentClient`'s constructor options, which internally just calls
+  `logger.setLogger(...)` on the same shared instance — constructing a *second*
+  `IncidentClient` with a *different* `logger` option overwrites it for every client
+  in the process, not just that one, since there is only one `Logger`, by design.
+
+  Two failure modes are handled once, inside `Logger` itself, not at each call site: a
+  level the current logger doesn't implement falls back to `console`'s *matching*
+  method individually (`console` is the bare-minimum default per level, not an
+  all-or-nothing swap for a partially-implemented logger), and a method that throws
+  when actually called is caught and swallowed — a broken logging integration must
+  never crash the SDK's own "never throws" guarantee, same reasoning as guarding a
+  caller's `onSuccess`/`onError` callback. Every other call site just calls
+  `logger.warn(...)`/`logger.error(...)` directly, with no existence check of its own.
 
   The SDK never adds its own level-filtering on top of whatever the host's logger
   already does (no `minLogLevel` option) — Winston/Pino already have their own
   threshold configuration, and a second filter here would take that decision away from
-  the host. `logCaught()` in `IncidentClient.ts` classifies severity by error type: a
-  caller's own mistake (`InvalidRequestError`, `ClientClosedError`) logs at `warn`;
-  everything else caught (a delivery failure wrapped as a plain `Error`, a misbehaving
-  callback, a genuine bug) logs at `error`.
+  the host.
+
+  Severity is chosen explicitly at each call site in `IncidentClient.ts`, not guessed
+  afterward from an error's type — each `try`/`catch` in `sendIncident`/
+  `sendIncidentAsync` covers exactly one known situation (a closed-client call, a
+  validation failure, a misbehaving callback, an unanticipated failure from
+  `deliver()`) and logs at the level that situation calls for directly: a caller's own
+  mistake (closed-client, invalid input, a broken `onSuccess`/`onError` callback) logs
+  at `warn`; a genuinely unanticipated failure — `deliver()` only ever rethrows for
+  one, since every ordinary delivery outcome already resolves as a normal response —
+  or an already-known delivery failure logs at `error`. There is no shared
+  "catch broadly, then classify by `instanceof`" helper, on purpose: by the time
+  something reaches a `catch` block here, the surrounding code already knows exactly
+  what could have caused it.
 - **`sendIncidentAsync` accepts optional `onSuccess`/`onError` callbacks** — a pure
   observation hook invoked synchronously from inside the same catch-everything path;
   supplying them (or not) never changes the never-throws guarantee. Java's
@@ -274,13 +289,13 @@ node/
 ├── src/
 │   ├── index.ts                          # public exports only: IncidentClient, Severity, types
 │   ├── IncidentClient.ts                 # façade — one copy, shared by both variants
+│   ├── Logger.ts                         # the one shared, central logger + singleton
 │   ├── constants.ts
 │   ├── model/                            # Severity, IncidentRequest, IncidentResponse,
 │   │                                        IncidentClientLogger, errors
 │   └── internal/
 │       ├── retry/RetryExecutor.ts
 │       ├── async/{AsyncDispatcher,RateLimitedDropLogger}.ts
-│       ├── logging/resolveLogger.ts       # resolves IncidentClientOptions.logger once
 │       ├── wire/wireCodec.ts
 │       ├── http/retryableStatus.ts
 │       ├── transport.legacy.ts           # committed source for the legacy variant

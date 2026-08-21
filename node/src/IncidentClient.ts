@@ -2,11 +2,10 @@ import { IncidentRequest, IncidentRequestInput, buildIncidentRequest } from './m
 import { IncidentResponse } from './model/IncidentResponse';
 import { IncidentClientLogger } from './model/IncidentClientLogger';
 import { InvalidRequestError, ClientClosedError } from './model/errors';
-import { ENDPOINT_URL, CLOSE_DRAIN_TIMEOUT_MS, DROP_LOG_INTERVAL_MS } from './constants';
+import { ENDPOINT_URL, CLOSE_DRAIN_TIMEOUT_MS } from './constants';
 import { executeWithRetry } from './internal/retry/RetryExecutor';
 import { AsyncDispatcher } from './internal/async/AsyncDispatcher';
-import { RateLimitedDropLogger } from './internal/async/RateLimitedDropLogger';
-import { resolveLogger, ResolvedLogger } from './internal/logging/resolveLogger';
+import { logger } from './Logger';
 import { serializeRequest, parseResponse } from './internal/wire/wireCodec';
 import { isRetryableStatus } from './internal/http/retryableStatus';
 import { createTransport } from './internal/transport';
@@ -43,17 +42,8 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
-/** A caller-triggered condition (invalid input, a call after close()) is a warning —
- * the caller's own mistake, not an SDK or delivery failure. Anything else caught here
- * (a delivery failure wrapped as a plain Error, a misbehaving callback, a genuine bug)
- * is logged as an error instead. */
-function logCaught(logger: ResolvedLogger, err: unknown): void {
-  const message = `[oppex-sdk] ${describeError(err)}`;
-  if (err instanceof InvalidRequestError || err instanceof ClientClosedError) {
-    logger.warn(message);
-  } else {
-    logger.error(message);
-  }
+function logMessage(err: unknown): string {
+  return `[oppex-sdk] ${describeError(err)}`;
 }
 
 /** Never throws or rejects, under any circumstance — validation failures, closed-client
@@ -78,8 +68,7 @@ function toFailedResponse(err: unknown): IncidentResponse {
 export class IncidentClient {
   private readonly apiKey: string;
   private readonly serviceKey: string | null | undefined;
-  private readonly logger: ResolvedLogger;
-  private readonly dispatcher: AsyncDispatcher;
+  private readonly dispatcher = new AsyncDispatcher();
   // Each client gets its own transport instance — a shared, module-level pool would
   // mean one client's close() destroys sockets a different, still-active client is
   // using (see node/CLAUDE.md's documented divergences).
@@ -104,17 +93,12 @@ export class IncidentClient {
     }
     this.apiKey = options.apiKey;
     this.serviceKey = options.serviceKey;
-    // Resolved once, here — every other call site in this class (and the dispatcher's
-    // own overload/force-drop notices) calls this.logger.warn/error directly, with no
-    // per-call existence check, since resolveLogger already guaranteed every level is
-    // present and safe to call.
-    this.logger = resolveLogger(options.logger);
-    this.dispatcher = new AsyncDispatcher(
-      undefined,
-      undefined,
-      new RateLimitedDropLogger(DROP_LOG_INTERVAL_MS, (m) => this.logger.warn(`[oppex-sdk] ${m}`)),
-      (m) => this.logger.warn(`[oppex-sdk] ${m}`),
-    );
+    // Sets the one shared, central logger every part of this SDK actually uses (see
+    // ./Logger.ts) — not something resolved per-instance. If omitted, the central
+    // logger is left exactly as it already was (its own default is console).
+    if (options.logger) {
+      logger.setLogger(options.logger);
+    }
   }
 
   /**
@@ -124,14 +108,29 @@ export class IncidentClient {
    * try/catch around `await client.sendIncident(...)`.
    */
   async sendIncident(input: IncidentRequestInput): Promise<IncidentResponse> {
+    // Each block below knows exactly what it caught, by construction — no need to
+    // catch broadly and then re-derive severity from the error's type afterward.
+    if (this.closed) {
+      const err = new ClientClosedError();
+      logger.warn(logMessage(err));
+      return toFailedResponse(err);
+    }
+
+    let request: IncidentRequest;
     try {
-      if (this.closed) {
-        throw new ClientClosedError();
-      }
-      const request = buildIncidentRequest(input);
+      request = buildIncidentRequest(input);
+    } catch (err) {
+      logger.warn(logMessage(err));
+      return toFailedResponse(err);
+    }
+
+    try {
       return await this.deliver(request);
     } catch (err) {
-      logCaught(this.logger, err);
+      // deliver() only rethrows for a genuinely unanticipated failure — every
+      // ordinary delivery failure (network error, non-retryable status, retries
+      // exhausted) already resolves as a normal response, never a throw.
+      logger.error(logMessage(err));
       return toFailedResponse(err);
     }
   }
@@ -147,37 +146,52 @@ export class IncidentClient {
       try {
         callbacks.onError?.(err);
       } catch (callbackErr) {
-        // A misbehaving caller-supplied callback must never crash the dispatcher.
-        logCaught(this.logger, callbackErr);
+        // A misbehaving caller-supplied callback must never crash the dispatcher —
+        // and we know exactly what this is: the caller's own callback throwing.
+        logger.warn(logMessage(callbackErr));
       }
     };
 
     if (this.closed) {
       const err = new ClientClosedError();
-      logCaught(this.logger, err);
+      logger.warn(logMessage(err));
       invokeOnError(err);
       return;
     }
 
     this.dispatcher.submit(async () => {
+      if (this.closed) {
+        const err = new ClientClosedError();
+        logger.warn(logMessage(err));
+        invokeOnError(err);
+        return;
+      }
+
+      let request: IncidentRequest;
       try {
-        if (this.closed) {
-          throw new ClientClosedError();
-        }
-        const request = buildIncidentRequest(input);
+        request = buildIncidentRequest(input);
+      } catch (err) {
+        logger.warn(logMessage(err));
+        invokeOnError(err);
+        return;
+      }
+
+      try {
         const response = await this.deliver(request);
         if (response.successful) {
           try {
             callbacks.onSuccess?.(response);
           } catch (callbackErr) {
-            logCaught(this.logger, callbackErr);
+            logger.warn(logMessage(callbackErr));
           }
         } else {
-          logCaught(this.logger, new Error(response.message ?? 'incident delivery failed'));
+          logger.error(logMessage(new Error(response.message ?? 'incident delivery failed')));
           invokeOnError(response);
         }
       } catch (err) {
-        logCaught(this.logger, err);
+        // Same as sendIncident: deliver() only rethrows for a genuinely
+        // unanticipated failure, never an ordinary delivery outcome.
+        logger.error(logMessage(err));
         invokeOnError(err);
       }
     });

@@ -83,6 +83,15 @@ const client = new IncidentClient({
 });
 ```
 
+This sets one shared, process-wide logger — every `IncidentClient` in your app logs
+through it, not just the one you passed it to. You can also set it directly, without
+constructing a client first:
+
+```js
+const { logger } = require('@oppex/integration-sdk');
+logger.setLogger(winstonLogger);
+```
+
 Every level is optional — implement only the ones you care about; anything you don't
 provide falls back to `console`'s matching method individually. A logger method that
 throws is caught internally and never propagates.

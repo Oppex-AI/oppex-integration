@@ -1,3 +1,5 @@
+import { logger } from '../../Logger';
+
 /** Accumulates drop counts and emits at most one summary log line per interval (60s),
  * only if drops actually occurred — avoids flooding the host application's logs with
  * one line per dropped incident during a sustained overload. */
@@ -7,7 +9,7 @@ export class RateLimitedDropLogger {
 
   constructor(
     private readonly intervalMs: number,
-    private readonly log: (message: string) => void = (m) => console.warn(`[oppex-sdk] ${m}`),
+    private readonly log: (message: string) => void = (m) => logger.warn(`[oppex-sdk] ${m}`),
     private readonly now: () => number = Date.now,
   ) {
     this.intervalStartedAt = now();
