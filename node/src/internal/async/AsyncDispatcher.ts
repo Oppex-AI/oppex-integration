@@ -22,12 +22,15 @@ export class AsyncDispatcher {
   private queueHead = 0;
   private idleWaiters: Array<() => void> = [];
   private readonly dropLogger: RateLimitedDropLogger;
+  private readonly warn: (message: string) => void;
 
   constructor(
     private readonly maxConcurrency: number = MAX_CONCURRENCY,
     private readonly capacity: number = QUEUE_CAPACITY,
     dropLogger?: RateLimitedDropLogger,
+    warn?: (message: string) => void,
   ) {
+    this.warn = warn ?? ((m) => console.warn(`[oppex-sdk] ${m}`));
     this.dropLogger = dropLogger ?? new RateLimitedDropLogger(DROP_LOG_INTERVAL_MS);
   }
 
@@ -130,7 +133,7 @@ export class AsyncDispatcher {
       const forcedDropCount = this.queueLength;
       this.queue = [];
       this.queueHead = 0;
-      console.warn(`[oppex-sdk] Force-dropped ${forcedDropCount} pending incidents during close.`);
+      this.warn(`Force-dropped ${forcedDropCount} pending incidents during close.`);
     }
   }
 }

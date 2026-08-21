@@ -200,6 +200,73 @@ async function main() {
     },
   );
 
+  // 8. logger: a validation warning (blank title) routes through logger.warn, not
+  // logger.error — a caller's own mistake, not a delivery failure.
+  {
+    clearDistCache();
+    var sdk8 = require(path.join(DIST_DIR, 'index.js'));
+    var warnCalls8 = [];
+    var logger8 = {
+      warn: function (message) {
+        warnCalls8.push(message);
+      },
+      error: function () {
+        throw new Error('logger.error must not be called for a validation warning');
+      },
+    };
+    var client8 = new sdk8.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger8 });
+    var res8 = await client8.sendIncident({ title: '', source: 'x', severity: sdk8.Severity.LOW });
+    assert.strictEqual(res8.successful, false);
+    assert.strictEqual(warnCalls8.length, 1, 'a blank title must log via logger.warn exactly once');
+    assert.ok(warnCalls8[0].indexOf('title') !== -1);
+    await client8.close();
+  }
+
+  // 9. logger: a real delivery failure (connection refused, retries exhausted) routes
+  // through logger.error, not logger.warn — an operational failure, not caller misuse.
+  {
+    process.env.OPPEX_TEST_ENDPOINT_URL = 'http://127.0.0.1:1';
+    clearDistCache();
+    var sdk9 = require(path.join(DIST_DIR, 'index.js'));
+    var errorCalls9 = [];
+    var logger9 = {
+      error: function (message) {
+        errorCalls9.push(message);
+      },
+    };
+    var client9 = new sdk9.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger9 });
+    var sawOnError9 = false;
+    client9.sendIncidentAsync(
+      { title: 'a', source: 'b', severity: sdk9.Severity.LOW },
+      {
+        onError: function () {
+          sawOnError9 = true;
+        },
+      },
+    );
+    await client9.close();
+    assert.strictEqual(sawOnError9, true);
+    assert.strictEqual(errorCalls9.length, 1, 'a real delivery failure must log via logger.error exactly once');
+    delete process.env.OPPEX_TEST_ENDPOINT_URL;
+  }
+
+  // 10. logger: a logger method that itself throws when called must never crash the
+  // SDK or prevent the normal response — same guarantee as a misbehaving onError/
+  // onSuccess callback.
+  {
+    clearDistCache();
+    var sdk10 = require(path.join(DIST_DIR, 'index.js'));
+    var brokenLogger = {
+      warn: function () {
+        throw new Error('this logger implementation is broken');
+      },
+    };
+    var client10 = new sdk10.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: brokenLogger });
+    var res10 = await client10.sendIncident({ title: '', source: 'x', severity: sdk10.Severity.LOW });
+    assert.strictEqual(res10.successful, false, 'a broken logger must not prevent the normal response');
+    await client10.close();
+  }
+
   console.log('IncidentClient.test.js OK');
 }
 

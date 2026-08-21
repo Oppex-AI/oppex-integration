@@ -1,9 +1,12 @@
 import { IncidentRequest, IncidentRequestInput, buildIncidentRequest } from './model/IncidentRequest';
 import { IncidentResponse } from './model/IncidentResponse';
+import { IncidentClientLogger } from './model/IncidentClientLogger';
 import { InvalidRequestError, ClientClosedError } from './model/errors';
-import { ENDPOINT_URL, CLOSE_DRAIN_TIMEOUT_MS } from './constants';
+import { ENDPOINT_URL, CLOSE_DRAIN_TIMEOUT_MS, DROP_LOG_INTERVAL_MS } from './constants';
 import { executeWithRetry } from './internal/retry/RetryExecutor';
 import { AsyncDispatcher } from './internal/async/AsyncDispatcher';
+import { RateLimitedDropLogger } from './internal/async/RateLimitedDropLogger';
+import { resolveLogger, ResolvedLogger } from './internal/logging/resolveLogger';
 import { serializeRequest, parseResponse } from './internal/wire/wireCodec';
 import { isRetryableStatus } from './internal/http/retryableStatus';
 import { createTransport } from './internal/transport';
@@ -14,6 +17,10 @@ export interface IncidentClientOptions {
   // or '' all mean every call from this client auto-routes on the Oppex side unless a
   // specific call overrides it with its own serviceKey.
   serviceKey?: string | null;
+  // Defaults to console (error/warn/info/debug) when omitted — pass a Winston/Pino
+  // instance directly to route this client's internal logging into a host's existing
+  // pipeline; no adapter code needed, since they already implement this same shape.
+  logger?: IncidentClientLogger;
 }
 
 export interface SendIncidentAsyncCallbacks {
@@ -36,8 +43,17 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
-function logInternal(err: unknown): void {
-  console.error(`[oppex-sdk] ${describeError(err)}`);
+/** A caller-triggered condition (invalid input, a call after close()) is a warning —
+ * the caller's own mistake, not an SDK or delivery failure. Anything else caught here
+ * (a delivery failure wrapped as a plain Error, a misbehaving callback, a genuine bug)
+ * is logged as an error instead. */
+function logCaught(logger: ResolvedLogger, err: unknown): void {
+  const message = `[oppex-sdk] ${describeError(err)}`;
+  if (err instanceof InvalidRequestError || err instanceof ClientClosedError) {
+    logger.warn(message);
+  } else {
+    logger.error(message);
+  }
 }
 
 /** Never throws or rejects, under any circumstance — validation failures, closed-client
@@ -62,7 +78,8 @@ function toFailedResponse(err: unknown): IncidentResponse {
 export class IncidentClient {
   private readonly apiKey: string;
   private readonly serviceKey: string | null | undefined;
-  private readonly dispatcher = new AsyncDispatcher();
+  private readonly logger: ResolvedLogger;
+  private readonly dispatcher: AsyncDispatcher;
   // Each client gets its own transport instance — a shared, module-level pool would
   // mean one client's close() destroys sockets a different, still-active client is
   // using (see node/CLAUDE.md's documented divergences).
@@ -87,6 +104,17 @@ export class IncidentClient {
     }
     this.apiKey = options.apiKey;
     this.serviceKey = options.serviceKey;
+    // Resolved once, here — every other call site in this class (and the dispatcher's
+    // own overload/force-drop notices) calls this.logger.warn/error directly, with no
+    // per-call existence check, since resolveLogger already guaranteed every level is
+    // present and safe to call.
+    this.logger = resolveLogger(options.logger);
+    this.dispatcher = new AsyncDispatcher(
+      undefined,
+      undefined,
+      new RateLimitedDropLogger(DROP_LOG_INTERVAL_MS, (m) => this.logger.warn(`[oppex-sdk] ${m}`)),
+      (m) => this.logger.warn(`[oppex-sdk] ${m}`),
+    );
   }
 
   /**
@@ -103,7 +131,7 @@ export class IncidentClient {
       const request = buildIncidentRequest(input);
       return await this.deliver(request);
     } catch (err) {
-      logInternal(err);
+      logCaught(this.logger, err);
       return toFailedResponse(err);
     }
   }
@@ -120,13 +148,13 @@ export class IncidentClient {
         callbacks.onError?.(err);
       } catch (callbackErr) {
         // A misbehaving caller-supplied callback must never crash the dispatcher.
-        logInternal(callbackErr);
+        logCaught(this.logger, callbackErr);
       }
     };
 
     if (this.closed) {
       const err = new ClientClosedError();
-      logInternal(err);
+      logCaught(this.logger, err);
       invokeOnError(err);
       return;
     }
@@ -142,14 +170,14 @@ export class IncidentClient {
           try {
             callbacks.onSuccess?.(response);
           } catch (callbackErr) {
-            logInternal(callbackErr);
+            logCaught(this.logger, callbackErr);
           }
         } else {
-          logInternal(new Error(response.message ?? 'incident delivery failed'));
+          logCaught(this.logger, new Error(response.message ?? 'incident delivery failed'));
           invokeOnError(response);
         }
       } catch (err) {
-        logInternal(err);
+        logCaught(this.logger, err);
         invokeOnError(err);
       }
     });

@@ -68,6 +68,25 @@ await client.close();
 Create one client per application, reuse it concurrently, and close it during
 application shutdown.
 
+### Logging
+
+Internal SDK logging (validation warnings, delivery failures, overload notices)
+defaults to `console`. Pass any logger that exposes `error`/`warn`/`info`/`debug` —
+Winston, Pino, or a custom wrapper all already match this shape — to route it into
+your own logging pipeline instead:
+
+```js
+const client = new IncidentClient({
+  apiKey: 'api-key',
+  serviceKey: 'service-key',
+  logger: winstonLogger, // any object with error/warn/info/debug methods works
+});
+```
+
+Every level is optional — implement only the ones you care about; anything you don't
+provide falls back to `console`'s matching method individually. A logger method that
+throws is caught internally and never propagates.
+
 ## Build and release
 
 Two scripts, two distinct jobs — deliberately kept separate rather than one script

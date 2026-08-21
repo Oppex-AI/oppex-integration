@@ -18,6 +18,7 @@ never throws or rejects from its two public send methods, by design.
 ```text
 IncidentClient                         (façade — the only class consumers touch)
  ├─ buildIncidentRequest()             (model/IncidentRequest.ts — validate + normalize)
+ ├─ resolveLogger()                    (internal/logging — resolved once, used everywhere below)
  ├─ AsyncDispatcher                    (internal/async — bounds fire-and-forget work)
  │   └─ RateLimitedDropLogger          (internal/async — one log line per overload, not one per drop)
  ├─ executeWithRetry()                 (internal/retry/RetryExecutor.ts — the retry loop)
@@ -192,6 +193,35 @@ the earlier explanation above for the full before/after.)
 emits at most one `"Dropped N incidents in the last minute."` line per interval (60s),
 rather than one log line per dropped incident — the difference between one line and a
 log-flooding incident during a real overload.
+
+### `resolveLogger` (`src/internal/logging/resolveLogger.ts`)
+
+Every internal log call in this SDK — a validation warning, a delivery failure, an
+overload notice from `AsyncDispatcher` — goes through one `logger` object, resolved
+exactly **once**, at `IncidentClient` construction time, from the caller's
+`IncidentClientOptions.logger` (an `IncidentClientLogger`: `{ error?, warn?, info?,
+debug? }`, deliberately shaped to match `console` so a Winston/Pino instance is a
+drop-in value with no adapter code).
+
+`resolveLogger` produces a fully-populated object where every one of the four levels
+is guaranteed present and safe to call — every other call site in the SDK then calls
+`logger.warn(...)`/`logger.error(...)` directly, with no per-call existence check or
+try/catch of its own. Two things are handled centrally, here, rather than at each of
+those call sites:
+
+- **A level the host didn't implement** falls back to `console`'s *matching* method
+  individually — `console` is the bare-minimum default per level, not an
+  all-or-nothing swap for a logger that only implements some of the four.
+- **A method that throws when actually called** is caught and swallowed — a
+  misbehaving host-supplied logger must never crash the SDK's own internal logging,
+  the same reasoning that already guards a caller's `onSuccess`/`onError` callback.
+
+Severity is decided by `IncidentClient`'s own `logCaught()`, based on error *type*:
+`InvalidRequestError`/`ClientClosedError` (a caller's own mistake) log at `warn`;
+everything else caught (a delivery failure, a misbehaving callback, a genuine bug)
+logs at `error`. The SDK never adds its own level-filtering on top of this — no
+`minLogLevel` option — since Winston/Pino/etc. already have their own threshold
+configuration, and a second filter here would take that decision away from the host.
 
 ### Shutdown: `close()`
 

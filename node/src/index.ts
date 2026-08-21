@@ -4,3 +4,4 @@ export type { IncidentClientOptions, SendIncidentAsyncCallbacks } from './Incide
 export { Severity } from './model/Severity';
 export type { IncidentRequestInput } from './model/IncidentRequest';
 export type { IncidentResponse } from './model/IncidentResponse';
+export type { IncidentClientLogger } from './model/IncidentClientLogger';
