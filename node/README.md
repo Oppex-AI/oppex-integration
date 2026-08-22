@@ -66,7 +66,16 @@ await client.close();
 ```
 
 Create one client per application, reuse it concurrently, and close it during
-application shutdown.
+application shutdown. This matters concretely for the `@oppex/integration-sdk-legacy`
+(`http`/`https`) package: each client owns its own private, keep-alive `Agent` — a
+deliberate choice, so that one client's `close()` can never destroy sockets a
+different, still-active client depends on — but it also means an abandoned client that
+never calls `close()` leaves its socket open indefinitely, with nothing else able to
+reclaim or reuse it. Creating a fresh client per request instead of reusing one
+accumulates one such socket per abandoned client for as long as the process keeps
+running (bounded by process lifetime, not permanent — the OS reclaims everything the
+moment the process itself exits). `@oppex/integration-sdk` (modern, `fetch`-based) does
+not have this concern: it has no per-client connection pool to abandon.
 
 ### Logging
 

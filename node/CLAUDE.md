@@ -232,6 +232,21 @@ differences from Java, each decided explicitly rather than left as an accident:
   would break "fetch only, zero runtime deps." The legacy variant's `http`/`https`
   transport does mirror Java's pool sizing via `new https.Agent({ keepAlive: true,
   maxSockets: 20 })`.
+
+  This per-client `Agent` on legacy has a real, confirmed cost if `close()` is skipped:
+  each `IncidentClient` gets its own private, keep-alive agent (deliberately — a shared
+  one would mean one client's `close()` destroys sockets a different, still-active
+  client depends on), and an abandoned client that never calls `close()` leaves its
+  socket open, with no shared pool to reclaim it. Verified empirically — 100 short-lived,
+  never-closed clients on legacy left 100 open handles behind (one per client, linear);
+  the same test on modern stayed flat at a handful, since `fetch`/undici shares one
+  global pool with no per-client state to abandon. Bounded by process lifetime, not
+  permanent (the OS reclaims everything on process exit), but real for a long-running
+  process that keeps creating never-closed clients. No code fix: a `FinalizationRegistry`
+  auto-cleanup isn't available pre–Node 14.6, and legacy's whole reason for existing is
+  supporting Node 8+ — the one variant with this problem is also the one that can't use
+  the modern fix for it. The existing "create one client per application, reuse it,
+  close it during shutdown" guidance (README, this file) is the actual mitigation.
 - **`ATTEMPT_TIMEOUT_MS = 8000`** collapses Java's separate 3s-connect/5s-socket
   timeouts into one attempt deadline in both variants — retry classification doesn't
   depend on the split, only latency shape does.
