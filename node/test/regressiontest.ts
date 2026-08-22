@@ -27,6 +27,12 @@
  * plus once at the very start and once right after close() — a plain visual gauge
  * while a run is in flight, not a leak check by itself; that needs comparing numbers
  * across repeated runs or increasing INCIDENT_COUNT values, not reading one run alone.
+ *
+ * The final summary line always reports succeeded/failed/dropped, computed as
+ * incidentCount - succeeded - failed. "Dropped" means the SDK's queue overflowed
+ * (capacity 5000) and evicted them before they ever attempted delivery — the SDK's
+ * own drop-notice log for this is rate-limited to once per 60s, so a short run can
+ * finish and exit before that log line ever gets the chance to fire on its own.
  */
 
 import winston from 'winston';
@@ -106,7 +112,15 @@ async function main(): Promise<void> {
   await client.close();
   clearInterval(memoryIntervalHandle);
   logMemory();
-  winstonLogger.info(`Done. succeeded=${succeeded} failed=${failed} (of ${incidentCount} submitted)`);
+  // succeeded + failed won't add up to incidentCount if the queue overflowed
+  // (capacity 5000) — those never ran at all, dropped before ever attempting
+  // delivery. The SDK's own drop-notice log is rate-limited to once per 60s, so a
+  // short run like this one can finish and exit before that log line ever fires —
+  // this line is what actually tells you a queue overflow happened either way.
+  const dropped = incidentCount - succeeded - failed;
+  winstonLogger.info(
+    `Done. succeeded=${succeeded} failed=${failed} dropped=${dropped} (of ${incidentCount} submitted)`,
+  );
   process.exit(failed > 0 ? 1 : 0);
 }
 
