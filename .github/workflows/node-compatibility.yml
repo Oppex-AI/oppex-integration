@@ -1,0 +1,169 @@
+name: Node compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  library-package:
+    name: Build and import the ${{ matrix.variant }} variant on Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Two separate npm packages, not one package with two major version lines —
+          # pkgName is what the external-consumer steps below require() against.
+          - variant: legacy
+            node: "8"
+            pkgName: "@oppex/integration-sdk-legacy"
+          - variant: legacy
+            node: "16"
+            pkgName: "@oppex/integration-sdk-legacy"
+          - variant: legacy
+            node: "17"
+            pkgName: "@oppex/integration-sdk-legacy"
+          - variant: modern
+            node: "18"
+            pkgName: "@oppex/integration-sdk"
+          - variant: modern
+            node: "20"
+            pkgName: "@oppex/integration-sdk"
+          - variant: modern
+            node: "22"
+            pkgName: "@oppex/integration-sdk"
+          - variant: modern
+            node: "24"
+            pkgName: "@oppex/integration-sdk"
+          - variant: modern
+            node: "26"
+            pkgName: "@oppex/integration-sdk"
+
+    steps:
+      # One checkout, one branch — both variants are built from it via
+      # node/scripts/build-variant.sh, which stages the requested variant's
+      # package.json/tsconfig.json/transport.ts before installing and building. No
+      # cross-branch ref is needed anywhere in this workflow anymore.
+      - name: Check out
+        uses: actions/checkout@v7
+
+      # Building needs a Node capable of running the TypeScript *compiler itself* —
+      # unrelated to which Node version this SDK is meant to run on. TypeScript's own
+      # published bundle (typescript/lib/tsc.js) uses syntax Node 8's parser rejects
+      # outright (e.g. optional catch binding), so running the build under matrix.node
+      # directly fails for that entry with a SyntaxError before a single line of this
+      # repo's own code even runs. Always build/pack under one fixed, modern Node;
+      # verify runtime compatibility separately, below, against the already-built
+      # artifact under the real matrix.node — exactly how a real consumer experiences
+      # the package (installing the published dist, never compiling it themselves).
+      - name: Set up Node (build tooling)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show build-tooling Node version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+
+      - name: Build and test the ${{ matrix.variant }} variant
+        shell: bash
+        run: node/scripts/build-variant.sh ${{ matrix.variant }}
+
+      - name: Pack tarball
+        shell: bash
+        working-directory: node
+        run: npm pack --pack-destination "${RUNNER_TEMP}"
+
+      # Switches PATH's Node to the actual version under test for every remaining
+      # step. This — installing the already-built tarball and running it — is the
+      # real compatibility proof this matrix exists for, done the same way any real
+      # consumer on this Node version would experience the package.
+      - name: Set up Node ${{ matrix.node }} (runtime under test)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show runtime-under-test Node version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+
+      - name: Install and run external consumer via npm
+        shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
+        run: |
+          set -euo pipefail
+          consumer_dir="${RUNNER_TEMP}/consumer-npm"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && npm install "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-npm-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-npm-output.txt"
+
+      # pnpm/yarn via corepack need a modern Node to run their own CLI at all — skipped
+      # on the Node 8 entry, matching how the Java workflow's Java-7 entry gets its own
+      # special handling rather than being forced through the same tooling as every
+      # other entry. Both are pinned to an exact version rather than corepack's default
+      # "whatever's latest": pnpm's own floor keeps rising independently of anything in
+      # this repo (pnpm 11 requires Node >=22.13, which broke this step outright on the
+      # Node 18/20 entries — nothing to do with THIS package's own Node 18 floor, just
+      # the pnpm CLI's own unrelated one). pnpm 8.15.9 supports Node >=16.14, covering
+      # every non-Node-8 entry in the matrix; yarn Classic (1.22.22) has no meaningful
+      # floor at all.
+      - name: Install and run external consumer via pnpm
+        if: matrix.node != '8'
+        shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@8.15.9 --activate
+          consumer_dir="${RUNNER_TEMP}/consumer-pnpm"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && pnpm install "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-pnpm-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-pnpm-output.txt"
+
+      - name: Install and run external consumer via yarn
+        if: matrix.node != '8'
+        shell: bash
+        env:
+          SDK_PACKAGE_NAME: ${{ matrix.pkgName }}
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          consumer_dir="${RUNNER_TEMP}/consumer-yarn"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/node/consumer.js "${consumer_dir}/"
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          (cd "${consumer_dir}" && npm init -y >/dev/null && yarn add "${tarball}")
+          node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-yarn-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-yarn-output.txt"
+
+      - name: Upload package tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: oppex-integration-sdk-node-${{ matrix.variant }}-${{ matrix.node }}
+          path: ${{ runner.temp }}/oppex-integration-sdk-*.tgz
+          if-no-files-found: error
+          retention-days: 7

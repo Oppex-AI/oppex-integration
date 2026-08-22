@@ -5,8 +5,8 @@ This repository is the language-neutral home for Oppex integration client librar
 ## SDKs
 
 - [`java/`](java/README.md): Java 7-compatible incident SDK and framework examples.
+- [`node/`](node/README.md): Node.js incident SDK, published as two majors (`^1` for Node 8+, `^2` for Node 18+).
 - `python/`: reserved for a future Python SDK.
-- `javascript/`: reserved for a future JavaScript/TypeScript SDK.
 - `golang/`: reserved for a future Go SDK.
 
 Each language directory owns its build system, dependencies, tests, examples, release metadata, and detailed engineering guide. Repository-wide GitHub Actions remain under `.github/workflows/` because GitHub only discovers workflows from that root location.

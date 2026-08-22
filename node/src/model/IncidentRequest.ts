@@ -1,0 +1,111 @@
+import { Severity, severityFromValue } from './Severity';
+import { InvalidRequestError } from './errors';
+import { MAX_SOURCE_LENGTH } from '../constants';
+
+export interface IncidentRequestInput {
+  title: string;
+  source: string;
+  severity: Severity | number;
+  priority?: number;
+  srcTimestamp?: number;
+  // null (or '') is a deliberate, valid signal distinct from omitting the field
+  // entirely: it means "no service key for this call," which Oppex reads as an
+  // explicit request to auto-route rather than "not specified, use the client's."
+  serviceKey?: string | null;
+  component?: string;
+  group?: string;
+  type?: string;
+  details?: string;
+}
+
+export interface IncidentRequest {
+  readonly title: string;
+  readonly source: string;
+  readonly severity: Severity;
+  readonly priority: number;
+  readonly srcTimestamp: number;
+  readonly serviceKey?: string | null;
+  readonly component?: string;
+  readonly group?: string;
+  readonly type?: string;
+  readonly details?: string;
+}
+
+function requireNonBlank(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new InvalidRequestError(`${field} is required and must be non-blank`);
+  }
+  return value;
+}
+
+function optionalNonBlank(value: unknown, field: string): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new InvalidRequestError(`${field} must be non-blank when supplied`);
+  }
+  return value;
+}
+
+/** Unlike optionalNonBlank, a blank string is a valid, meaningful value here — not
+ * rejected — since '' and null both mean "auto-route," the same as omitting the field
+ * means "use the client's default." Only a wrong type (not a string, not null, not
+ * undefined) is a real error. */
+function nullableString(value: unknown, field: string): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw new InvalidRequestError(`${field} must be a string, null, or omitted`);
+  }
+  return value;
+}
+
+/** Validates and normalizes a raw request into its wire-ready shape. Throws
+ * InvalidRequestError for internal callers to catch — buildIncidentRequest itself is not
+ * part of the "never throws" public surface; IncidentClient.sendIncident/sendIncidentAsync
+ * catch everything this can throw and convert it to a logged, non-throwing outcome. */
+export function buildIncidentRequest(input: IncidentRequestInput): IncidentRequest {
+  if (input === null || typeof input !== 'object') {
+    throw new InvalidRequestError('request must be an object');
+  }
+
+  const title = requireNonBlank(input.title, 'title');
+  const source = requireNonBlank(input.source, 'source');
+  if (source.length > MAX_SOURCE_LENGTH) {
+    throw new InvalidRequestError(`source must be at most ${MAX_SOURCE_LENGTH} characters`);
+  }
+
+  const severity = severityFromValue(Number(input.severity));
+
+  // Number.isFinite, not typeof + range comparison: every comparison against NaN is
+  // false (NaN < 1 and NaN > 5 are both false), so a plain range check silently lets
+  // NaN through as if it were valid — Number.isFinite correctly rejects NaN (and
+  // +/-Infinity) while still accepting every real finite number.
+  const priority = input.priority === undefined ? 1 : input.priority;
+  if (!Number.isFinite(priority) || priority < 1 || priority > 5) {
+    throw new InvalidRequestError('priority must be between 1 and 5');
+  }
+
+  const srcTimestamp = input.srcTimestamp === undefined ? Date.now() : input.srcTimestamp;
+  if (!Number.isFinite(srcTimestamp) || srcTimestamp <= 0) {
+    throw new InvalidRequestError('srcTimestamp must be greater than zero');
+  }
+
+  return {
+    title,
+    source,
+    severity,
+    priority,
+    srcTimestamp,
+    serviceKey: nullableString(input.serviceKey, 'serviceKey'),
+    component: optionalNonBlank(input.component, 'component'),
+    group: optionalNonBlank(input.group, 'group'),
+    type: optionalNonBlank(input.type, 'type'),
+    details: optionalNonBlank(input.details, 'details'),
+  };
+}
