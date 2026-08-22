@@ -300,6 +300,85 @@ async function main() {
     },
   );
 
+  // 12. "Incident created" (sync) logs only once Oppex confirms with a real
+  // incidentId — not merely once local validation passes.
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200, data: 'confirmed-sync-1' }));
+    },
+    async function (sdk) {
+      var infoCalls12 = [];
+      var logger12 = {
+        info: function (message) {
+          infoCalls12.push(message);
+        },
+      };
+      var client12 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger12 });
+      var res12 = await client12.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
+      assert.strictEqual(res12.successful, true);
+      assert.strictEqual(infoCalls12.length, 1, '"created" must log exactly once, only after server confirmation');
+      assert.ok(infoCalls12[0].indexOf('Incident created (sync)') !== -1);
+      assert.ok(infoCalls12[0].indexOf('confirmed-sync-1') !== -1, 'the confirmed incidentId must appear in the log message');
+      await client12.close();
+    },
+  );
+
+  // 13. Same as #12, for the async path — the log fires inside the task, after
+  // deliver() resolves, not at validation time.
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200, data: 'confirmed-async-1' }));
+    },
+    async function (sdk) {
+      var infoCalls13 = [];
+      var logger13 = {
+        info: function (message) {
+          infoCalls13.push(message);
+        },
+      };
+      var client13 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger13 });
+      var sawOnSuccess13 = false;
+      client13.sendIncidentAsync(
+        { title: 'a', source: 'b', severity: sdk.Severity.LOW },
+        {
+          onSuccess: function () {
+            sawOnSuccess13 = true;
+          },
+        },
+      );
+      await client13.close();
+      assert.strictEqual(sawOnSuccess13, true);
+      assert.strictEqual(infoCalls13.length, 1, '"created" must log exactly once, only after server confirmation');
+      assert.ok(infoCalls13[0].indexOf('Incident created (async)') !== -1);
+      assert.ok(infoCalls13[0].indexOf('confirmed-async-1') !== -1, 'the confirmed incidentId must appear in the log message');
+    },
+  );
+
+  // 14. A successful response WITHOUT a real incidentId must not log "created" at
+  // all — the confirmation gate is on having a real id to report, not just
+  // successful:true.
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200 })); // no `data` field
+    },
+    async function (sdk) {
+      var infoCalls14 = [];
+      var logger14 = {
+        info: function (message) {
+          infoCalls14.push(message);
+        },
+      };
+      var client14 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger14 });
+      var res14 = await client14.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
+      assert.strictEqual(res14.successful, true);
+      assert.strictEqual(infoCalls14.length, 0, 'no incidentId in the response must mean no "created" log at all');
+      await client14.close();
+    },
+  );
+
   console.log('IncidentClient.test.js OK');
 }
 

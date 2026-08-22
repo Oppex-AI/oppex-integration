@@ -119,14 +119,20 @@ export class IncidentClient {
     let request: IncidentRequest;
     try {
       request = buildIncidentRequest(input);
-      logger.info(`[oppex-sdk] Incident created (sync): ${request.title}`);
     } catch (err) {
       logger.warn(logMessage(err));
       return toFailedResponse(err);
     }
 
     try {
-      return await this.deliver(request);
+      const response = await this.deliver(request);
+      // "Created" means Oppex actually confirmed it, not just that local validation
+      // passed — gated on a real incidentId coming back, not merely successful:true,
+      // since a 2xx response without one hasn't actually confirmed an id to report.
+      if (response.successful && response.incidentId) {
+        logger.info(`[oppex-sdk] Incident created (sync): ${request.title} (incidentId=${response.incidentId})`);
+      }
+      return response;
     } catch (err) {
       // deliver() only rethrows for a genuinely unanticipated failure — every
       // ordinary delivery failure (network error, non-retryable status, retries
@@ -178,7 +184,6 @@ export class IncidentClient {
       let request: IncidentRequest;
       try {
         request = buildIncidentRequest(input);
-        logger.info(`[oppex-sdk] Incident created (async): ${request.title}`);
       } catch (err) {
         logger.warn(logMessage(err));
         invokeOnError(err);
@@ -188,6 +193,11 @@ export class IncidentClient {
       try {
         const response = await this.deliver(request);
         if (response.successful) {
+          // Same as sendIncident: "created" means Oppex actually confirmed it, gated
+          // on a real incidentId, not just that the request passed local validation.
+          if (response.incidentId) {
+            logger.info(`[oppex-sdk] Incident created (async): ${request.title} (incidentId=${response.incidentId})`);
+          }
           try {
             callbacks.onSuccess?.(response);
           } catch (callbackErr) {

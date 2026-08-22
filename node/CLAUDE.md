@@ -223,19 +223,25 @@ differences from Java, each decided explicitly rather than left as an accident:
   what could have caused it.
 
   Beyond warnings and errors, every incident's lifecycle is logged too, at two
-  different levels depending on how confirmed it is: `sendIncident` and the task
-  inside `sendIncidentAsync` each log at `info` once `buildIncidentRequest` succeeds
-  ("Incident created (sync|async)") — this is a real, validated incident about to be
-  delivered. `sendIncidentAsync` additionally logs at `debug`, synchronously and
-  before `dispatcher.submit()`, the moment a call is merely *accepted* ("Incident
-  queued for async delivery") — using the raw, not-yet-validated `input.title`, since
-  validation hasn't run yet at that point; this one is deliberately the noisier,
-  lower-confidence level, since a queued call might still fail validation once it
-  actually runs. Both are per-incident, not per-summary, and can be high-volume under
-  load. Since the default logger (no `logger` supplied) is plain `console`, which does
-  no level filtering at all, both print unconditionally by default — a host that wants
-  either suppressed needs to supply a logger whose own `info`/`debug` implementation
-  filters it, e.g. Winston/Pino configured at `warn` or higher to silence both. This is
+  different levels depending on how confirmed it is. `sendIncident` and the task
+  inside `sendIncidentAsync` each log at `info` **after `deliver()` resolves**, only
+  when the response is both `successful` and carries a real `incidentId` ("Incident
+  created (sync|async)", including that id) — deliberately *not* logged right after
+  `buildIncidentRequest` succeeds, since passing local validation only means the
+  request is well-formed, not that Oppex has actually confirmed anything yet. A
+  successful response with no id to report logs nothing at this point (`onSuccess`/the
+  returned response still reflect success either way — this is purely about what gets
+  logged). `sendIncidentAsync` additionally logs at `debug`, synchronously and before
+  `dispatcher.submit()`, the moment a call is merely *accepted* ("Incident queued for
+  async delivery") — using the raw, not-yet-validated `input.title`, since validation
+  hasn't run yet at that point; this one is deliberately the noisier, lower-confidence
+  level, logged well before anything is confirmed, since a queued call might still fail
+  validation — or delivery entirely — once it actually runs. Both are per-incident, not
+  per-summary, and can be high-volume under load. Since the default logger (no `logger`
+  supplied) is plain `console`, which does no level filtering at all, both print
+  unconditionally by default — a host that wants either suppressed needs to supply a
+  logger whose own `info`/`debug` implementation filters it, e.g. Winston/Pino
+  configured at `warn` or higher to silence both. This is
   a deliberate consequence of "the SDK never adds its own level-filtering," not an
   oversight.
 - **`sendIncidentAsync` accepts optional `onSuccess`/`onError` callbacks** — a pure
