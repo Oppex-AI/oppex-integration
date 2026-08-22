@@ -234,6 +234,16 @@ already-known delivery failure logs at `error`. There's no shared "catch broadly
 then classify by `instanceof`" helper — by the time something reaches a `catch` block
 here, the surrounding code already knows exactly what could have caused it.
 
+Below `warn`/`error`, every incident's lifecycle is also logged, at two levels: "Incident
+created" at `info` once `buildIncidentRequest` succeeds (in both `sendIncident` and
+`sendIncidentAsync`'s task — a real, validated incident), and "Incident queued for
+async delivery" at `debug`, synchronously before `dispatcher.submit()`, in
+`sendIncidentAsync` specifically — using the raw `input.title`, since validation hasn't
+run yet at that point, hence the lower-confidence level. Both are per-incident and can
+be high-volume; they print unconditionally with the default console logger (no level
+filtering), so a host that wants either suppressed needs a logger whose own
+`info`/`debug` implementation filters it.
+
 The SDK never adds its own level-filtering on top of this — no `minLogLevel` option —
 since Winston/Pino/etc. already have their own threshold configuration, and a second
 filter here would take that decision away from the host.

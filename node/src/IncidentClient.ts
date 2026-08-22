@@ -119,6 +119,7 @@ export class IncidentClient {
     let request: IncidentRequest;
     try {
       request = buildIncidentRequest(input);
+      logger.info(`[oppex-sdk] Incident created (sync): ${request.title}`);
     } catch (err) {
       logger.warn(logMessage(err));
       return toFailedResponse(err);
@@ -159,6 +160,12 @@ export class IncidentClient {
       return;
     }
 
+    // Logged here, synchronously, before submit() — input isn't validated yet at
+    // this point (that happens inside the task below, which may run immediately or
+    // sit queued for a while), so this only confirms the call was accepted and
+    // handed to the dispatcher, not that it's a valid request.
+    logger.debug(`[oppex-sdk] Incident queued for async delivery: ${input && input.title}`);
+
     this.dispatcher.submit(async () => {
       // No this.closed check here, deliberately: reaching this point already proves
       // this task was submitted before close() was called (a call made after close()
@@ -171,6 +178,7 @@ export class IncidentClient {
       let request: IncidentRequest;
       try {
         request = buildIncidentRequest(input);
+        logger.info(`[oppex-sdk] Incident created (async): ${request.title}`);
       } catch (err) {
         logger.warn(logMessage(err));
         invokeOnError(err);

@@ -105,6 +105,16 @@ Every level is optional — implement only the ones you care about; anything you
 provide falls back to `console`'s matching method individually. A logger method that
 throws is caught internally and never propagates.
 
+Beyond warnings and delivery failures, every incident's own lifecycle is logged too:
+`sendIncident`/`sendIncidentAsync` each log at `info` once the request is validated
+("Incident created"), and `sendIncidentAsync` additionally logs at `debug` the moment
+it's handed to the internal queue ("Incident queued for async delivery") — before it's
+necessarily run, since it may sit queued for a while under load. These are per-incident
+and can be high-volume; since the default (no `logger` supplied) falls back to plain
+`console`, which has no level filtering, they print unconditionally unless you supply a
+logger whose own `info`/`debug` methods filter them (e.g. Winston/Pino configured with
+`level: 'warn'` or higher, to silence both).
+
 ## Build and release
 
 Two scripts, two distinct jobs — deliberately kept separate rather than one script

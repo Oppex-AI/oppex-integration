@@ -221,6 +221,23 @@ differences from Java, each decided explicitly rather than left as an accident:
   "catch broadly, then classify by `instanceof`" helper, on purpose: by the time
   something reaches a `catch` block here, the surrounding code already knows exactly
   what could have caused it.
+
+  Beyond warnings and errors, every incident's lifecycle is logged too, at two
+  different levels depending on how confirmed it is: `sendIncident` and the task
+  inside `sendIncidentAsync` each log at `info` once `buildIncidentRequest` succeeds
+  ("Incident created (sync|async)") — this is a real, validated incident about to be
+  delivered. `sendIncidentAsync` additionally logs at `debug`, synchronously and
+  before `dispatcher.submit()`, the moment a call is merely *accepted* ("Incident
+  queued for async delivery") — using the raw, not-yet-validated `input.title`, since
+  validation hasn't run yet at that point; this one is deliberately the noisier,
+  lower-confidence level, since a queued call might still fail validation once it
+  actually runs. Both are per-incident, not per-summary, and can be high-volume under
+  load. Since the default logger (no `logger` supplied) is plain `console`, which does
+  no level filtering at all, both print unconditionally by default — a host that wants
+  either suppressed needs to supply a logger whose own `info`/`debug` implementation
+  filters it, e.g. Winston/Pino configured at `warn` or higher to silence both. This is
+  a deliberate consequence of "the SDK never adds its own level-filtering," not an
+  oversight.
 - **`sendIncidentAsync` accepts optional `onSuccess`/`onError` callbacks** — a pure
   observation hook invoked synchronously from inside the same catch-everything path;
   supplying them (or not) never changes the never-throws guarantee. Java's
