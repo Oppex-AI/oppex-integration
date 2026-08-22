@@ -62,6 +62,7 @@ client.sendIncidentAsync(
 );
 
 // Drains in-flight async work (bounded, 10s) and releases transport resources.
+// Never throws or rejects either — a failure to close cleanly is logged, not raised.
 await client.close();
 ```
 

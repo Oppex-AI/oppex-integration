@@ -34,18 +34,32 @@ export function createTransport(): Transport {
           parsed,
           { method: 'POST', headers, agent: isHttps ? httpsAgent : httpAgent },
           (res) => {
-            res.setEncoding('utf8'); // decode per-chunk correctly; avoids corrupting
-            let body = ''; // multi-byte UTF-8 characters split across chunk boundaries
-            res.on('data', (chunk: string) => {
-              body += chunk;
-            });
-            res.on('end', () => {
-              resolve({ statusCode: res.statusCode ?? 0, body });
-            });
+            // Runs on a later event-loop tick, outside this Promise executor's own
+            // synchronous body — the executor only auto-converts a *synchronous* throw
+            // into a rejection; a throw from inside this callback would otherwise
+            // escape as a raw uncaught exception instead, so it's caught explicitly.
+            try {
+              res.setEncoding('utf8'); // decode per-chunk correctly; avoids corrupting
+              let body = ''; // multi-byte UTF-8 characters split across chunk boundaries
+              res.on('data', (chunk: string) => {
+                body += chunk;
+              });
+              res.on('end', () => {
+                resolve({ statusCode: res.statusCode ?? 0, body });
+              });
+            } catch (err) {
+              reject(err);
+            }
           },
         );
         req.setTimeout(ATTEMPT_TIMEOUT_MS, () => {
-          req.destroy(new Error('Request timed out'));
+          // Same reasoning as above: a timer callback, not covered by the executor's
+          // automatic synchronous-throw handling.
+          try {
+            req.destroy(new Error('Request timed out'));
+          } catch (err) {
+            reject(err);
+          }
         });
         req.on('error', (err) => reject(err));
         req.end(payload);

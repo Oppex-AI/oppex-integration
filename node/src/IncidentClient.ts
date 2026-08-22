@@ -220,6 +220,10 @@ export class IncidentClient {
    * Idempotent. Drains the async queue up to a bounded timeout, then closes the
    * transport. Subsequent sendIncident/sendIncidentAsync calls resolve/log a
    * "client closed" outcome rather than attempting delivery.
+   *
+   * Never throws or rejects, same as sendIncident/sendIncidentAsync — a caller
+   * shutting down must never have that shutdown itself blow up because closing a
+   * transport's sockets happened to fail.
    */
   async close(): Promise<void> {
     if (this.closed) {
@@ -227,7 +231,11 @@ export class IncidentClient {
     }
     this.closed = true;
     await this.dispatcher.close(CLOSE_DRAIN_TIMEOUT_MS);
-    this.transport.closeTransport();
+    try {
+      this.transport.closeTransport();
+    } catch (err) {
+      logger.error(logMessage(err));
+    }
   }
 
   private async deliver(request: IncidentRequest): Promise<IncidentResponse> {

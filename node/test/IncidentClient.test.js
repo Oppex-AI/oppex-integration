@@ -379,6 +379,87 @@ async function main() {
     },
   );
 
+  // 15. close() must never throw or reject, even if the transport itself fails to
+  // close cleanly (e.g. Agent.destroy() throwing) — a caller's shutdown sequence must
+  // never blow up because closing sockets happened to fail.
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200 }));
+    },
+    async function (sdk) {
+      var errorCalls15 = [];
+      var logger15 = {
+        error: function (message) {
+          errorCalls15.push(message);
+        },
+      };
+      var client15 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's', logger: logger15 });
+      client15.transport.closeTransport = function () {
+        throw new Error('agent.destroy() blew up');
+      };
+      await client15.close();
+      assert.strictEqual(errorCalls15.length, 1, 'a failed transport close must still be logged');
+      assert.ok(errorCalls15[0].indexOf('agent.destroy() blew up') !== -1);
+    },
+  );
+
+  // 16. No `logger` option passed anywhere: the central Logger singleton must fall
+  // back to plain `console` and actually route through it — not silently do nothing.
+  // Requires a freshly reloaded module (withServer's clearDistCache()) so this test
+  // observes the singleton's true default, unaffected by any earlier test's
+  // setLogger() call, which persists process-wide once made.
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200, data: 'confirmed-console-1' }));
+    },
+    async function (sdk) {
+      var originalWarn = console.warn;
+      var originalInfo = console.info;
+      var originalDebug = console.debug;
+      var warnCalls16 = [];
+      var infoCalls16 = [];
+      var debugCalls16 = [];
+      console.warn = function (message) {
+        warnCalls16.push(message);
+      };
+      console.info = function (message) {
+        infoCalls16.push(message);
+      };
+      console.debug = function (message) {
+        debugCalls16.push(message);
+      };
+      try {
+        // No `logger` in the options at all.
+        var client16 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
+
+        // Checked before firing the async call below, deliberately — sendIncidentAsync
+        // is fire-and-forget, and its own "created" log would race with (and double
+        // up against) this one otherwise.
+        var res16 = await client16.sendIncident({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
+        assert.strictEqual(res16.successful, true);
+        assert.strictEqual(infoCalls16.length, 1, '"created" must reach console.info when no logger is supplied');
+        assert.ok(infoCalls16[0].indexOf('confirmed-console-1') !== -1);
+
+        var res16Invalid = await client16.sendIncident({ title: '', source: 'b', severity: sdk.Severity.LOW });
+        assert.strictEqual(res16Invalid.successful, false);
+        assert.strictEqual(warnCalls16.length, 1, 'a validation failure must reach console.warn when no logger is supplied');
+
+        // "Queued" logs synchronously, before submit() — safe to assert right away.
+        client16.sendIncidentAsync({ title: 'a', source: 'b', severity: sdk.Severity.LOW });
+        assert.strictEqual(debugCalls16.length, 1, '"queued" must reach console.debug when no logger is supplied');
+        assert.ok(debugCalls16[0].indexOf('Incident queued for async delivery') !== -1);
+
+        await client16.close();
+      } finally {
+        console.warn = originalWarn;
+        console.info = originalInfo;
+        console.debug = originalDebug;
+      }
+    },
+  );
+
   console.log('IncidentClient.test.js OK');
 }
 

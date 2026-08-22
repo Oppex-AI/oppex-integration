@@ -305,6 +305,39 @@ differences from Java, each decided explicitly rather than left as an accident:
   rather than only ever exercising the validation-failure path via a blank title. Still
   "network-free" in the sense that matters: no real network access required, no
   traffic to the actual Oppex service.
+- **Async delivery-failure log level: `error` here vs. Java's `Level.FINE`.** Java
+  deliberately logs an async delivery's terminal failure at `FINE` — invisible unless a
+  host explicitly turns JUL verbosity up — specifically to avoid flooding a host
+  application (`java/CLAUDE.md` §10). Node logs the same event at `error`, which is
+  loud by default via `console.error` when no custom logger is supplied. This was a
+  deliberate choice on this side (an unhandled async failure is exactly the kind of
+  thing a host should see by default, absent its own logger), not an oversight, but it
+  is a real, disclosed noise-philosophy divergence, not a parity item — flagged here so
+  it isn't mistaken for one.
+- **Close()-time force-drop logging: an explicit, separate log line here vs. reusing
+  the rate-limited overflow counter in Java.** Both SDKs' *overflow* drop-notice
+  (`RateLimitedDropLogger`) match closely — `warn`/`WARNING`, the same one-minute
+  window, near-identical wording. But Java's `close()` timeout path funnels its
+  force-dropped tasks through that *same* rate-limited counter (each drop just calls
+  `recordDrop()`), which means the final batch dropped during shutdown can go
+  completely unlogged if nothing calls `recordDrop()` again afterward to trigger the
+  next flush — a real latent gap, not by design. Node's `AsyncDispatcher.close()`
+  instead logs `"Force-dropped N pending incidents during close."` as its own
+  unconditional, immediate line, independent of the rate limiter's window — a
+  deliberate design choice that happens to be strictly more reliable here, not a
+  parity gap to close.
+- **Legacy `sendRequest`'s response and request-timeout callbacks are individually
+  guarded, not just the request-issuing Promise as a whole.** `new Promise((resolve,
+  reject) => ...)` only auto-converts a *synchronous* throw during its own initial,
+  direct invocation into a rejection. The `http.request(...)` response callback and the
+  `req.setTimeout(...)` timeout callback both run later, as independent event-loop
+  callbacks Node invokes on its own — outside that automatic coverage entirely. A throw
+  from either would otherwise escape as a raw uncaught exception rather than a
+  rejection `deliver()`'s retry loop could ever see, breaking the "never throws" chain
+  one layer below `IncidentClient` itself. Both are wrapped in their own try/catch,
+  rejecting on failure instead. `req.end()` and the initial `transport.request(...)`
+  call are left as-is, deliberately: both run directly inside the executor's own
+  synchronous body, where the automatic conversion already applies.
 
 ## 6. Directory layout
 
@@ -539,3 +572,10 @@ unflushed in-memory client (e.g. a database connection pool that nobody explicit
 closed). `close()` exists to make an *orderly* shutdown better (drain what you can,
 within a bound that respects the host's own grace period), not to make the *absence*
 of one worse than it already would be.
+
+`close()` itself never throws or rejects, same guarantee as `sendIncident`/
+`sendIncidentAsync`: `transport.closeTransport()` is wrapped in its own try/catch, and
+a failure there is logged at `error` rather than propagated. A caller's shutdown
+sequence must never itself blow up because closing sockets happened to fail — matches
+Java's `close()`, which guards its own `httpExecutor.close()` the same way (see §5's
+close()-logging entry for the one remaining, deliberate difference: the log level).
