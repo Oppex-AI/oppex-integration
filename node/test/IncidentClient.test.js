@@ -267,6 +267,39 @@ async function main() {
     await client10.close();
   }
 
+  // 11. close() must let already-queued sendIncidentAsync tasks actually attempt
+  // delivery during the drain window, not reject themselves as "closed" — only
+  // MAX_CONCURRENCY (2) of these 5 can be running when close() is called; the other
+  // 3 are still sitting in the queue, and must still get a real delivery attempt
+  // while the transport is still open (it's only torn down after the drain finishes).
+  await withServer(
+    function (req, res) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, code: 200 }));
+    },
+    async function (sdk) {
+      var client11 = new sdk.IncidentClient({ apiKey: 'k', serviceKey: 's' });
+      var succeeded11 = 0;
+      var failed11 = 0;
+      for (var i = 0; i < 5; i++) {
+        client11.sendIncidentAsync(
+          { title: 'queued-' + i, source: 'x', severity: sdk.Severity.LOW },
+          {
+            onSuccess: function () {
+              succeeded11++;
+            },
+            onError: function () {
+              failed11++;
+            },
+          },
+        );
+      }
+      await client11.close();
+      assert.strictEqual(succeeded11, 5, 'every queued task must get a real delivery attempt during the drain, not self-reject as closed');
+      assert.strictEqual(failed11, 0);
+    },
+  );
+
   console.log('IncidentClient.test.js OK');
 }
 

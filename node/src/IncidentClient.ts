@@ -160,13 +160,14 @@ export class IncidentClient {
     }
 
     this.dispatcher.submit(async () => {
-      if (this.closed) {
-        const err = new ClientClosedError();
-        logger.warn(logMessage(err));
-        invokeOnError(err);
-        return;
-      }
-
+      // No this.closed check here, deliberately: reaching this point already proves
+      // this task was submitted before close() was called (a call made after close()
+      // was already rejected above, before ever reaching the dispatcher). By the time
+      // the dispatcher actually runs a queued task, this.closed may well be true —
+      // close() flips it immediately, then drains — but that's not a reason to reject
+      // it now: the transport isn't torn down until AFTER the whole drain finishes
+      // (see IncidentClient.close()), so this attempt has a fully live connection
+      // pool to use, exactly like any other request.
       let request: IncidentRequest;
       try {
         request = buildIncidentRequest(input);

@@ -22,6 +22,11 @@
  *
  * Optional override: INCIDENT_COUNT (default 10 — pass INCIDENT_COUNT=10000 or
  * whatever scale you actually want for a real load-test run).
+ *
+ * Also logs process.memoryUsage() (rss/heapUsed/heapTotal) every 2s at debug level,
+ * plus once at the very start and once right after close() — a plain visual gauge
+ * while a run is in flight, not a leak check by itself; that needs comparing numbers
+ * across repeated runs or increasing INCIDENT_COUNT values, not reading one run alone.
  */
 
 import winston from 'winston';
@@ -59,7 +64,19 @@ const client = new IncidentClient({ apiKey, serviceKey, logger: winstonLogger })
 let succeeded = 0;
 let failed = 0;
 
+function logMemory(): void {
+  const mem = process.memoryUsage();
+  const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+  winstonLogger.debug(`memory: rss=${mb(mem.rss)}MB heapUsed=${mb(mem.heapUsed)}MB heapTotal=${mb(mem.heapTotal)}MB`);
+}
+
+// A plain visual gauge while the run is in flight — not a leak check by itself (a
+// single run's numbers don't prove anything; watching them stay flat across repeated
+// runs, or grow across increasing INCIDENT_COUNT values, would).
+const memoryIntervalHandle = setInterval(logMemory, 2000);
+
 winstonLogger.info(`Firing ${incidentCount} incidents via sendIncidentAsync...`);
+logMemory();
 
 for (let i = 0; i < incidentCount; i++) {
   client.sendIncidentAsync(
@@ -87,11 +104,14 @@ for (let i = 0; i < incidentCount; i++) {
 
 async function main(): Promise<void> {
   await client.close();
+  clearInterval(memoryIntervalHandle);
+  logMemory();
   winstonLogger.info(`Done. succeeded=${succeeded} failed=${failed} (of ${incidentCount} submitted)`);
   process.exit(failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
+  clearInterval(memoryIntervalHandle);
   winstonLogger.error(`Regression test itself threw: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });
