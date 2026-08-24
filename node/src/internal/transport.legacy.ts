@@ -30,9 +30,23 @@ export function createTransport(): Transport {
         const parsed = new URL(urlStr);
         const isHttps = parsed.protocol === 'https:';
         const transport = isHttps ? https : http;
+        // Deliberately NOT transport.request(parsed, options, callback) — that 3-argument
+        // overload (URL object + separate options + callback) was only added in Node
+        // 10.9.0. On real Node 8 it throws synchronously ("listener" argument must be a
+        // function), since Node 8's http.request only understands the 2-argument forms.
+        // Merging the URL's fields into one options object keeps this on the 2-argument
+        // form that every supported Node version (8 through current) has always accepted.
+        const options = {
+          protocol: parsed.protocol,
+          hostname: parsed.hostname,
+          port: parsed.port ? Number(parsed.port) : isHttps ? 443 : 80,
+          path: parsed.pathname + parsed.search,
+          method: 'POST',
+          headers,
+          agent: isHttps ? httpsAgent : httpAgent,
+        };
         const req = transport.request(
-          parsed,
-          { method: 'POST', headers, agent: isHttps ? httpsAgent : httpAgent },
+          options,
           (res) => {
             // Runs on a later event-loop tick, outside this Promise executor's own
             // synchronous body — the executor only auto-converts a *synchronous* throw
