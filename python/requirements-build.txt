@@ -1,0 +1,23 @@
+# Build-time requirements only.
+#
+# The SDK itself has no runtime dependencies and no test dependencies: see
+# install_requires in setup.py, and the standard-library-only rule in CLAUDE.md.
+# There is intentionally no requirements.txt, because nothing is needed to run
+# or test the published package.
+#
+# setup.py imports setuptools, so an interpreter that will build the package
+# needs these installed first. Python 3.12 and newer no longer seed setuptools
+# into a new virtual environment, so this is not optional there:
+#
+#     python -m pip install --requirement requirements-build.txt
+#
+# The Python 2.7 pins are the last releases that support that interpreter, which
+# builds the canonical artifact. The Python 3 upper bounds are the real
+# constraint on every interpreter: setuptools 70 and wheel 0.45 dropped support
+# for the universal py2.py3-none-any wheel this SDK publishes as a single
+# artifact. Within those bounds pip picks the newest release the running
+# interpreter supports.
+setuptools==44.1.1; python_version < "3"
+wheel==0.37.1; python_version < "3"
+setuptools<70; python_version >= "3"
+wheel<0.45; python_version >= "3"

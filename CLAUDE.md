@@ -6,7 +6,7 @@ This is the durable repository-level guide. Read it before changing shared autom
 
 This repository houses equivalent Oppex integration libraries for multiple programming languages. Each SDK should present conventions natural to its language while preserving the shared incident-delivery contract and keeping release lifecycles independent.
 
-The Java SDK was the first implementation. It lives entirely under `java/`. Future Python, JavaScript/TypeScript, and Go implementations must be added as peer directories rather than mixed into the Java Maven reactor.
+The Java SDK was the first implementation and lives entirely under `java/`. The Python SDK followed and lives entirely under `python/`. Future JavaScript/TypeScript and Go implementations must be added as peer directories rather than mixed into an existing SDK's build.
 
 ## Repository layout
 
@@ -21,7 +21,12 @@ oppex-integration/
 │   ├── sdk-http/
 │   ├── sdk-bundle/
 │   └── examples/
-├── python/                 # Future Python SDK
+├── python/                 # Complete Python SDK project
+│   ├── setup.py
+│   ├── src/oppex_sdk/
+│   ├── tests/
+│   ├── scripts/
+│   └── examples/
 ├── javascript/             # Future JavaScript/TypeScript SDK
 ├── golang/                 # Future Go SDK
 ├── .gitignore
@@ -39,6 +44,8 @@ Every language SDK owns its source tree, package-manager metadata, lockfiles, te
 
 Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `python/`, `javascript/`, or `golang/` respectively.
 
+The Java SDK bundles Apache HttpClient and Jackson; the Python SDK is standard library only. Neither fact may leak into the other's build, and a shared dependency choice is never assumed across languages.
+
 ### Shared root responsibilities
 
 Repository root is limited to:
@@ -48,11 +55,13 @@ Repository root is limited to:
 - `.github/` automation and isolated CI consumers;
 - peer language SDK directories.
 
-GitHub workflow YAML must remain under root `.github/workflows/`; GitHub does not discover workflows stored inside `java/` or another language directory. Workflow commands and artifact paths must explicitly include the language directory.
+GitHub workflow YAML must remain under root `.github/workflows/`; GitHub does not discover workflows stored inside `java/`, `python/`, or another language directory. Workflow commands and artifact paths must explicitly include the language directory.
 
 ### Independent releases
 
 Language SDKs may use different version numbers and release cadences. Do not assume a Java artifact version is also the Python, npm, or Go module version. Release jobs must identify both the language and package being published.
+
+Release tags are language-qualified: `java-vX.Y.Z` publishes the Java SDK to Maven Central, `python-vX.Y.Z` publishes the Python SDK to PyPI. A tag must never trigger another language's release.
 
 ### Shared API semantics, idiomatic surfaces
 
@@ -65,13 +74,29 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 ## Current language guides
 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
+- Python: [`python/CLAUDE.md`](python/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
+
+## Shared contract decisions
+
+Every SDK agrees on these, and a change to any of them is a cross-language change:
+
+- Endpoint `POST https://api.oppex.ai/api/v1/incident/post`, authenticated with the `X-API-KEY` header.
+- Payload fields `serviceKey`, `title`, `source`, `severity`, `priority`, `srcTimestamp`, `component`, `group`, `type`, `detailsJSON`. An absent optional field is omitted rather than sent as null.
+- Severity is the numeric scale 1 (lowest) through 5 (highest); priority is 1 through 5. `srcTimestamp` is milliseconds since the Unix epoch.
+- `source` is required and capped at 255 characters.
+- A request's own service key overrides the client's. Service routing omits the service key entirely and refuses a request that carries one.
+- HTTP 429, 500, 502, 503 and 504, plus transport failures that never reached a status line, retry with a 0.5s, 1s, 2s, 4s, 8s backoff. Every other status fails immediately.
+- 3 second connect timeout, 5 second socket timeout.
+- Asynchronous delivery is best effort through a queue bounded at 5000 that drops the oldest entry under saturation, and a close drains for up to 10 seconds before abandoning the rest.
+
+Each SDK documents its own idiomatic surface and any intentional deviation in its language guide.
 
 ## Adding a language SDK
 
 When adding a new SDK:
 
-1. Create the canonical peer directory (`python/`, `javascript/`, or `golang/`).
+1. Create the canonical peer directory (`javascript/` or `golang/`).
 2. Add a language README with installation, usage, build, test, and release instructions.
 3. Add a language-root `CLAUDE.md` recording compatibility floors, public API boundaries, dependencies, concurrency/lifecycle behavior, packaging, and directory ownership.
 4. Keep source, tests, examples, dependency metadata, and generated outputs within that directory.
@@ -88,6 +113,17 @@ When adding a new SDK:
 - Never place credentials, signing keys, registry tokens, or API keys in source or workflow YAML.
 - Keep compatibility failures visible; do not use `continue-on-error` to make a supported runtime optional.
 - Update the nearest `CLAUDE.md` whenever a structural, compatibility, packaging, or lifecycle decision changes.
+
+## Compatibility-floor pattern
+
+Both implemented SDKs support a runtime far older than their build tooling prefers, and both prove it the same way. Reuse this shape for a new SDK rather than inventing another:
+
+1. Build one canonical artifact on the oldest supported runtime.
+2. Checksum it and upload it once.
+3. Run those exact bytes on every supported runtime in a matrix, compiling and executing an external consumer that uses only the published API.
+4. Publish the same bytes, without rebuilding them, from a tag-triggered job.
+
+Java runs its matrix with `actions/setup-java`; Python runs its matrix in pinned `python:<version>-slim` containers so no job depends on which interpreters a runner image happens to ship.
 
 ## Java relocation decision
 

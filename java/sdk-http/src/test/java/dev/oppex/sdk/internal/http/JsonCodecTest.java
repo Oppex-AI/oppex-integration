@@ -51,6 +51,20 @@ public class JsonCodecTest {
     }
 
     @Test
+    public void omitsServiceKeyWhenServiceRoutingIsUsed() throws Exception {
+        IncidentRequest request = IncidentRequest.builder()
+                .title("Failure")
+                .source("Monitor")
+                .severity(3)
+                .build();
+
+        String json = codec.serialize(request, null);
+
+        assertFalse(json.contains("serviceKey"));
+        assertTrue(json.startsWith("{\"title\":\"Failure\""));
+    }
+
+    @Test
     public void parsesApiResponse() throws Exception {
         IncidentResponse response = codec.parseResponse(
                 "{\"success\":true,\"code\":200,\"message\":\"created\",\"data\":\"inc-123\"}", 200);

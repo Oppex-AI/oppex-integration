@@ -116,8 +116,28 @@ try {
 }
 ```
 
-Only the API key and service key are required. The SDK does not accept or send
-a separate tenant value.
+Only the API key is required. The SDK does not accept or send a separate tenant
+value.
+
+### Service routing
+
+Omit the service key when Oppex should resolve the target service from the
+incident itself:
+
+```java
+IncidentClient client = IncidentClient.builder()
+        .apiKey("your-api-key")
+        .build();
+
+client.postWithServiceRouting(request);
+// Or client.postAsyncWithServiceRouting(request) for fire-and-forget delivery.
+```
+
+The routed methods leave `serviceKey` out of the payload entirely; they reject a
+request that carries its own service key. `post` and `postAsync` are unchanged
+and still send a service key, so they require one on either the client or the
+request and throw `IllegalStateException` when neither supplies one. A client
+configured with a service key can use both modes.
 
 `post` performs delivery and retries on the caller thread. `postAsync` uses two daemon workers and a bounded queue of 5,000 items. If that queue fills, the oldest queued incident is dropped so the newest incident can be accepted.
 

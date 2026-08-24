@@ -24,13 +24,23 @@ public class IncidentClientBuilderTest {
         IncidentClient.builder().serviceKey("service-key").build();
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void rejectsBlankServiceKey() {
-        IncidentClient.builder().apiKey("api-key").serviceKey(" ").build();
+    @Test
+    public void buildsClientWithoutServiceKeyForServiceRouting() {
+        IncidentClient client = IncidentClient.builder().apiKey("api-key").build();
+        try {
+            assertNotNull(client);
+        } finally {
+            client.close();
+        }
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void rejectsMissingServiceKey() {
-        IncidentClient.builder().apiKey("api-key").build();
+    @Test
+    public void buildsClientWhenServiceKeyIsBlank() {
+        IncidentClient client = IncidentClient.builder().apiKey("api-key").serviceKey(" ").build();
+        try {
+            assertNotNull(client);
+        } finally {
+            client.close();
+        }
     }
 }

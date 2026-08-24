@@ -15,6 +15,10 @@ public final class IncidentClientBuilder {
         return this;
     }
 
+    /**
+     * Optional. When omitted, incidents must be posted with
+     * {@link IncidentClient#postWithServiceRouting(dev.oppex.sdk.model.IncidentRequest)}.
+     */
     public IncidentClientBuilder serviceKey(String serviceKey) {
         this.serviceKey = serviceKey;
         return this;
@@ -22,7 +26,6 @@ public final class IncidentClientBuilder {
 
     public IncidentClient build() {
         requireNonBlank(apiKey, "apiKey");
-        requireNonBlank(serviceKey, "serviceKey");
         return new IncidentClient(apiKey, serviceKey);
     }
 

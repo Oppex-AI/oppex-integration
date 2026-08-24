@@ -23,6 +23,10 @@ IncidentClient client = IncidentClient.builder()
         .build();
 ```
 
+The service key is optional. A client built with only `apiKey` can post incidents
+with `postWithServiceRouting`, which omits `serviceKey` from the payload so the
+API resolves the target service itself.
+
 Create one client per application, reuse it concurrently, and close it during application shutdown.
 
 ## 2. Non-negotiable constraints
@@ -229,15 +233,13 @@ Synchronous transport failures use this checked exception. It carries:
 
 #### `IncidentClientBuilder`
 
-The minimal required client configuration is:
-
-- `apiKey`
-- `serviceKey`
-
-Both values are validated as non-null and non-blank during `build()`. Tenant is
-not a separate input and is not sent on the wire. Do not add timeout, queue,
-executor, proxy, serializer, connection-pool, or retry knobs to the V1 public
-builder without an explicit product/API decision.
+The only required client configuration is `apiKey`, validated as non-null and
+non-blank during `build()`. A default `serviceKey` is optional; a null or blank
+value is normalized to absent rather than rejected, because service routing
+covers clients that never carry one. Tenant is not a separate input and is not
+sent on the wire. Do not add timeout, queue, executor, proxy, serializer,
+connection-pool, or retry knobs to the V1 public builder without an explicit
+product/API decision.
 
 #### `IncidentClient`
 
@@ -254,7 +256,27 @@ builder without an explicit product/API decision.
 - Calling `postAsync()` after close produces `IllegalStateException`.
 - Passing a null request produces `IllegalArgumentException`.
 
-The public two-string constructor exists for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
+#### Service-key modes
+
+Two delivery modes share one client, one HTTP client, one retry policy, and one
+dispatcher. They differ only in the default service key handed to the transport:
+
+| Method | Default service key sent | Precondition |
+| --- | --- | --- |
+| `post` / `postAsync` | The client default, overridable per request | A service key must exist on the client or the request |
+| `postWithServiceRouting` / `postAsyncWithServiceRouting` | None; the wire field is omitted | The request must not carry a service key |
+
+Both preconditions fail fast before the lifecycle lock and before any HTTP work:
+a missing service key produces `IllegalStateException`, and a request-level
+service key passed to a routed method produces `IllegalArgumentException`.
+Silently dropping a caller's explicit service key would be more surprising than
+rejecting the contradiction.
+
+Service-key resolution stays in `JsonCodec` so request-over-default precedence
+has exactly one implementation. `IncidentClient` chooses only which default to
+supply.
+
+The public single- and two-string constructors exist for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
 
 ### 5.3 `sdk-bundle`
 
@@ -294,8 +316,11 @@ Wire fields:
 ```
 
 Optional fields are omitted when absent. A request-level `serviceKey` takes
-precedence over the client default. There is no tenant configuration or tenant
-wire field; the API key and service key provide the required routing context.
+precedence over the client default, and `serviceKey` itself is omitted when
+neither supplies one, which is how service routing is expressed on the wire. An
+explicit null is not sent. There is no tenant configuration or tenant wire
+field; the API key plus either the service key or service routing provides the
+required routing context.
 
 The pool is configured with:
 
@@ -523,7 +548,7 @@ gh run view "$run_id" --log-failed
 
 ## 14. Tests and verification
 
-The test suite was written alongside the implementation. At initial completion it contained 25 tests.
+The test suite was written alongside the implementation. At initial completion it contained 25 tests; service routing brought it to 33.
 
 Coverage responsibilities:
 
@@ -532,6 +557,7 @@ Coverage responsibilities:
 | Severity mapping | `SeverityTest` |
 | Request immutability/defaults/validation | `IncidentRequestTest` |
 | Client configuration validation | `IncidentClientBuilderTest` |
+| Service-key and service-routing preconditions | `IncidentClientTest` |
 | I/O and HTTP retry behavior | `RetryExecutorTest` |
 | Retry limit and backoff order | `RetryExecutorTest` |
 | Queue capacity and drop-oldest behavior | `AsyncDispatcherTest` |
@@ -539,6 +565,7 @@ Coverage responsibilities:
 | Rate-limited drop summary | `RateLimitedDropLoggerTest` |
 | Wire field names and escaping | `JsonCodecTest` |
 | Client-default/request-override precedence | `JsonCodecTest` |
+| Omitted `serviceKey` for service routing | `JsonCodecTest`, `HttpExecutorTest` |
 | Response parsing | `JsonCodecTest` |
 | Real local HTTP POST, header, and body | `HttpExecutorTest` |
 | Retryable vs non-retryable HTTP classification | `HttpExecutorTest` |
