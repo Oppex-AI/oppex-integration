@@ -15,6 +15,7 @@ import java.io.IOException;
 final class JsonCodec {
     private final JsonFactory jsonFactory = new JsonFactory();
 
+    /** A null resolved service key is omitted so the API routes the incident by its own rules. */
     String serialize(IncidentRequest request, String defaultServiceKey) throws IOException {
         String serviceKey = request.getServiceKey() == null ? defaultServiceKey : request.getServiceKey();
 
@@ -22,7 +23,7 @@ final class JsonCodec {
         JsonGenerator json = jsonFactory.createGenerator(output, JsonEncoding.UTF8);
         try {
             json.writeStartObject();
-            json.writeStringField("serviceKey", serviceKey);
+            writeOptionalString(json, "serviceKey", serviceKey);
             json.writeStringField("title", request.getTitle());
             json.writeStringField("source", request.getSource());
             json.writeNumberField("severity", request.getSeverity().getValue());

@@ -68,6 +68,26 @@ public class HttpExecutorTest {
     }
 
     @Test
+    public void omitsServiceKeyWhenNoneIsResolved() throws Exception {
+        final AtomicReference<String> requestBody = new AtomicReference<String>();
+        server.createContext("/api/v1/incident/post", new HttpHandler() {
+            public void handle(HttpExchange exchange) throws IOException {
+                requestBody.set(read(exchange.getRequestBody()));
+                respond(exchange, 200, "{\"success\":true,\"code\":200,\"data\":\"inc-2\"}");
+            }
+        });
+        server.start();
+        HttpExecutor executor = new HttpExecutor("secret", endpoint);
+        try {
+            IncidentResponse response = executor.execute(request(), null);
+            assertTrue(response.isSuccessful());
+            assertFalse(requestBody.get().contains("serviceKey"));
+        } finally {
+            executor.close();
+        }
+    }
+
+    @Test
     public void marksConfiguredStatusAsRetryable() throws Exception {
         server.createContext("/api/v1/incident/post", fixedResponse(503, "{\"message\":\"busy\"}"));
         server.start();

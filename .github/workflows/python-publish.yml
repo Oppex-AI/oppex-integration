@@ -1,0 +1,71 @@
+name: Publish Python SDK to PyPI
+
+on:
+  push:
+    tags:
+      - "python-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/python-compatibility.yml
+
+  publish:
+    name: Publish Python SDK
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: pypi
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate and extract release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^python-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as python-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Download canonical Python artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-python27
+          path: ${{ runner.temp }}/canonical-python27
+
+      - name: Verify the canonical artifacts match the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-python27"
+          sha256sum --check ./*.sha256
+
+          expected_wheel="oppex_integration_sdk-${RELEASE_VERSION}-py2.py3-none-any.whl"
+          expected_sdist="oppex_integration_sdk-${RELEASE_VERSION}.tar.gz"
+          test -s "${expected_wheel}"
+          test -s "${expected_sdist}"
+
+          # Publish exactly the bytes the compatibility matrix proved: copy the
+          # distributions away from their checksum files without rebuilding them.
+          upload_directory="${RUNNER_TEMP}/upload"
+          mkdir -p "${upload_directory}"
+          cp "${expected_wheel}" "${expected_sdist}" "${upload_directory}/"
+          echo "UPLOAD_DIRECTORY=${upload_directory}" >> "${GITHUB_ENV}"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ env.UPLOAD_DIRECTORY }}
+          print-hash: true
+          # The token lives only in the protected `pypi` environment. The action
+          # defaults the username to `__token__`, so nothing else is needed.
+          password: ${{ secrets.PYPI_API_TOKEN }}
