@@ -4,12 +4,14 @@ import dev.oppex.sdk.model.Severity;
 
 /** Compiled from scratch by each CI JDK to verify the supported consumer API. */
 public final class ExternalConsumer {
+    private static final String SHADED_PREFIX = "dev.oppex.sdk.shaded.";
+
     private ExternalConsumer() {
     }
 
     public static void main(String[] args) throws Exception {
-        Class.forName("org.apache.http.impl.client.CloseableHttpClient");
-        Class.forName("com.fasterxml.jackson.core.JsonFactory");
+        assertRelocated("org.apache.http.impl.client.CloseableHttpClient");
+        assertRelocated("com.fasterxml.jackson.core.JsonFactory");
 
         IncidentClient client = IncidentClient.builder()
                 .apiKey("external-consumer-api-key")
@@ -49,5 +51,19 @@ public final class ExternalConsumer {
             routingClient.close();
         }
         System.out.println("EXTERNAL_CONSUMER_OK java=" + System.getProperty("java.version"));
+    }
+
+    /**
+     * The bundle must carry each dependency under its relocated name only. An unrelocated copy would
+     * sit ahead of an application's own Jackson or HttpClient on the classpath and shadow it.
+     */
+    private static void assertRelocated(String originalName) throws Exception {
+        Class.forName(SHADED_PREFIX + originalName);
+        try {
+            Class.forName(originalName);
+            throw new IllegalStateException("Bundled dependency is not relocated: " + originalName);
+        } catch (ClassNotFoundException expected) {
+            // Only the relocated copy may ship inside the bundle.
+        }
     }
 }

@@ -14,6 +14,10 @@ This directory contains repository automation and consumer smoke sources. It is 
 - The uploaded Java artifact must be the non-executable `java/sdk-bundle` library, never an example application JAR.
 - The uploaded Python artifacts must be the universal `py2.py3-none-any` wheel and its sdist from `python/dist`, with no declared runtime dependencies and no console entry point.
 - `.github/smoke/java` sources use only supported SDK API and Java 7 language syntax.
+- The bundled Java JAR must contain no third-party package under its original
+  name. The Java compatibility workflow enforces this, and the Java smoke
+  consumer asserts each bundled dependency loads only under its
+  `dev.oppex.sdk.shaded` name.
 - `.github/smoke/python` sources use only supported SDK API and Python 2.7-compatible syntax.
 - Workflow files stay at repository root, but language-specific commands and artifacts must be explicitly scoped to their peer language directory.
 - Do not hide a failing matrix entry with `continue-on-error`.
