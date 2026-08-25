@@ -6,7 +6,7 @@ This is the durable repository-level guide. Read it before changing shared autom
 
 This repository houses equivalent Oppex integration libraries for multiple programming languages. Each SDK should present conventions natural to its language while preserving the shared incident-delivery contract and keeping release lifecycles independent.
 
-The Java SDK was the first implementation and lives entirely under `java/`. The Python SDK followed and lives entirely under `python/`. Future JavaScript/TypeScript and Go implementations must be added as peer directories rather than mixed into an existing SDK's build.
+The Java SDK was the first implementation and lives entirely under `java/`. The Python SDK followed and lives entirely under `python/`.  A Node.js implementation now lives entirely under `node/`. Future Go implementations must be added as peer directories rather than mixed into an existing SDK's build.
 
 ## Repository layout
 
@@ -26,8 +26,13 @@ oppex-integration/
 │   ├── src/oppex_sdk/
 │   ├── tests/
 │   ├── scripts/
-│   └── examples/
-├── javascript/             # Future JavaScript/TypeScript SDK
+│   └── examples/            # Future JavaScript/TypeScript SDK
+├── node/                   # Complete Node.js SDK project
+│   ├── package.json
+│   ├── src/
+│   ├── test/
+│   └── scripts/
+├── python/                 # Future Python SDK
 ├── golang/                 # Future Go SDK
 ├── .gitignore
 ├── README.md
@@ -42,7 +47,7 @@ Only create a future language directory when implementation work begins. Empty p
 
 Every language SDK owns its source tree, package-manager metadata, lockfiles, tests, examples, compatibility policy, and release configuration. One SDK must not require another SDK's toolchain to build or test.
 
-Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `python/`, `javascript/`, or `golang/` respectively.
+Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `node/`, `python/`, or `golang/` respectively.
 
 The Java SDK bundles Apache HttpClient and Jackson; the Python SDK is standard library only. Neither fact may leak into the other's build, and a shared dependency choice is never assumed across languages.
 
@@ -74,6 +79,7 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 ## Current language guides
 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
+- Node.js: [`node/CLAUDE.md`](node/CLAUDE.md)
 - Python: [`python/CLAUDE.md`](python/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
 
@@ -96,7 +102,7 @@ Each SDK documents its own idiomatic surface and any intentional deviation in it
 
 When adding a new SDK:
 
-1. Create the canonical peer directory (`javascript/` or `golang/`).
+1. Create the canonical peer directory (eg `golang/`).
 2. Add a language README with installation, usage, build, test, and release instructions.
 3. Add a language-root `CLAUDE.md` recording compatibility floors, public API boundaries, dependencies, concurrency/lifecycle behavior, packaging, and directory ownership.
 4. Keep source, tests, examples, dependency metadata, and generated outputs within that directory.
