@@ -25,4 +25,19 @@ rm -rf src/oppex_integration_sdk.egg-info src/oppex-integration-sdk.egg-info
 python -m pip install --disable-pip-version-check --requirement requirements-build.txt
 python setup.py --quiet sdist bdist_wheel
 
+# PyPI rejects an sdist whose filename is not the PEP 625 normalised project
+# name. A wheel filename is normalised by the wheel format itself, but
+# setuptools on Python 2.7 predates PEP 625 and names the sdist from the raw
+# project name, so normalise it here -- while these are still build outputs --
+# rather than renaming released bytes after the matrix has checksummed them.
+project_name="$(python setup.py --name)"
+release_version="$(python setup.py --version)"
+normalised_name="$(python -c 'import re, sys; sys.stdout.write(re.sub(r"[-_.]+", "_", sys.argv[1]))' "${project_name}")"
+raw_sdist="dist/${project_name}-${release_version}.tar.gz"
+normalised_sdist="dist/${normalised_name}-${release_version}.tar.gz"
+if [ "${raw_sdist}" != "${normalised_sdist}" ] && [ -f "${raw_sdist}" ]; then
+    mv "${raw_sdist}" "${normalised_sdist}"
+fi
+test -s "${normalised_sdist}"
+
 ls -l dist

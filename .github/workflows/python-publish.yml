@@ -46,32 +46,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
           cd "${RUNNER_TEMP}/canonical-python27"
           sha256sum --check ./*.sha256
 
-          # A wheel filename is always normalised to underscores, while the
-          # Python 2.7 sdist keeps the hyphens of the project name, so match
-          # both distributions by pattern and assert the version separately.
-          wheels=(*-py2.py3-none-any.whl)
-          sdists=(*.tar.gz)
-          test "${#wheels[@]}" -eq 1
-          test "${#sdists[@]}" -eq 1
-
+          # Both filenames carry the PEP 625 normalised project name, which is
+          # the only form PyPI accepts. The canonical build normalises the sdist
+          # name that Python 2.7 setuptools would otherwise leave hyphenated.
           expected_wheel="oppex_integration_sdk-${RELEASE_VERSION}-py2.py3-none-any.whl"
-          test "${wheels[0]}" = "${expected_wheel}"
-          if [[ ! "${sdists[0]}" =~ ^oppex[-_]integration[-_]sdk-"${RELEASE_VERSION}"\.tar\.gz$ ]]; then
-            echo "Sdist ${sdists[0]} does not match release version ${RELEASE_VERSION}" >&2
-            exit 1
-          fi
-          test -s "${wheels[0]}"
-          test -s "${sdists[0]}"
+          expected_sdist="oppex_integration_sdk-${RELEASE_VERSION}.tar.gz"
+          test -s "${expected_wheel}"
+          test -s "${expected_sdist}"
 
           # Publish exactly the bytes the compatibility matrix proved: copy the
           # distributions away from their checksum files without rebuilding them.
           upload_directory="${RUNNER_TEMP}/upload"
           mkdir -p "${upload_directory}"
-          cp "${wheels[0]}" "${sdists[0]}" "${upload_directory}/"
+          cp "${expected_wheel}" "${expected_sdist}" "${upload_directory}/"
           echo "UPLOAD_DIRECTORY=${upload_directory}" >> "${GITHUB_ENV}"
 
       - name: Publish to PyPI

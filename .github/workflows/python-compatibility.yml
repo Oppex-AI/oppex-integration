@@ -82,6 +82,14 @@ jobs:
           echo "CANONICAL_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"
           echo "CANONICAL_SDIST=${sdists[0]}" >> "${GITHUB_ENV}"
 
+          # PyPI rejects an sdist filename that is not the PEP 625 normalised
+          # project name, so fail here rather than part-way through an upload.
+          sdist_name="$(basename "${sdists[0]}")"
+          if [[ ! "${sdist_name}" =~ ^oppex_integration_sdk-.+\.tar\.gz$ ]]; then
+            echo "Sdist ${sdist_name} must use the PEP 625 normalised project name" >&2
+            exit 1
+          fi
+
       - name: Verify the wheel is a dependency-free importable library
         shell: bash
         run: |
