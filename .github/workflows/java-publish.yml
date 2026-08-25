@@ -1,0 +1,110 @@
+name: Publish Java SDK to Maven Central
+
+on:
+  push:
+    tags:
+      - "java-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: java-maven-central-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/java-compatibility.yml
+
+  publish:
+    name: Publish Java SDK
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: maven-central
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Validate and extract release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^java-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as java-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Set up JDK 17 and Maven Central credentials
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "17"
+          java-package: jdk
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_TOKEN
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Download canonical Java 7 JAR
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-java7
+          path: ${{ runner.temp }}/canonical-java7
+
+      - name: Verify canonical Java 7 JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-java7"
+          sha256sum --check ./*.sha256
+          expected_jar="oppex-integration-sdk-${RELEASE_VERSION}.jar"
+          test -s "${expected_jar}"
+          echo "CANONICAL_BINARY_DIRECTORY=${RUNNER_TEMP}/canonical-java7" >> "${GITHUB_ENV}"
+          echo "CANONICAL_JAR=${RUNNER_TEMP}/canonical-java7/${expected_jar}" >> "${GITHUB_ENV}"
+
+      - name: Set release version from tag
+        shell: bash
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          --file java/pom.xml
+          org.codehaus.mojo:versions-maven-plugin:2.21.0:set
+          -DnewVersion="${RELEASE_VERSION}"
+          -DgenerateBackupPoms=false
+          -DprocessAllModules=true
+
+      - name: Verify release packaging preserves canonical JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --no-transfer-progress \
+            --file java/pom.xml \
+            --activate-profiles central-release \
+            --projects sdk-bundle \
+            --also-make \
+            -Dcanonical.binary.directory="${CANONICAL_BINARY_DIRECTORY}" \
+            -Dgpg.skip=true \
+            verify
+          cmp --silent \
+            "${CANONICAL_JAR}" \
+            "java/sdk-bundle/target/oppex-integration-sdk-${RELEASE_VERSION}.jar"
+
+      - name: Publish signed release to Maven Central
+        shell: bash
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          --file java/pom.xml
+          --activate-profiles central-release
+          --projects sdk-bundle
+          --also-make
+          -Dcanonical.binary.directory="${CANONICAL_BINARY_DIRECTORY}"
+          -DskipTests
+          clean deploy
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_TOKEN: ${{ secrets.CENTRAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}

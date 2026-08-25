@@ -25,31 +25,43 @@ public class JsonCodecTest {
                 .details("{\"stacktrace\":\"line\\nnext\"}")
                 .build();
 
-        String json = codec.serialize(request, "service-key", "tenant");
+        String json = codec.serialize(request, "service-key");
 
         assertTrue(json.contains("\"serviceKey\":\"service-key\""));
         assertTrue(json.contains("\"title\":\"Deploy \\\"failed\\\"\""));
         assertTrue(json.contains("\"severity\":2"));
         assertTrue(json.contains("\"srcTimestamp\":1787036524808"));
-        assertTrue(json.contains("\"tenant\":\"tenant\""));
+        assertFalse(json.contains("\"tenant\""));
         assertTrue(json.contains("\"detailsJSON\":\"{\\\"stacktrace\\\""));
     }
 
     @Test
-    public void requestValuesOverrideClientDefaults() throws Exception {
+    public void requestServiceKeyOverridesClientDefault() throws Exception {
         IncidentRequest request = IncidentRequest.builder()
                 .title("Failure")
                 .source("Monitor")
                 .severity(3)
                 .serviceKey("request-service")
-                .tenant("request-tenant")
                 .build();
 
-        String json = codec.serialize(request, "client-service", "client-tenant");
+        String json = codec.serialize(request, "client-service");
 
         assertTrue(json.contains("\"serviceKey\":\"request-service\""));
-        assertTrue(json.contains("\"tenant\":\"request-tenant\""));
         assertFalse(json.contains("client-service"));
+    }
+
+    @Test
+    public void omitsServiceKeyWhenServiceRoutingIsUsed() throws Exception {
+        IncidentRequest request = IncidentRequest.builder()
+                .title("Failure")
+                .source("Monitor")
+                .severity(3)
+                .build();
+
+        String json = codec.serialize(request, null);
+
+        assertFalse(json.contains("serviceKey"));
+        assertTrue(json.startsWith("{\"title\":\"Failure\""));
     }
 
     @Test
@@ -63,4 +75,3 @@ public class JsonCodecTest {
         assertEquals("inc-123", response.getIncidentId());
     }
 }
-

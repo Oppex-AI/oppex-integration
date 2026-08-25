@@ -1,0 +1,186 @@
+name: Python compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The canonical artifacts are built on the oldest supported interpreter, in a
+  # container, so no job depends on which Pythons a runner image happens to ship.
+  CANONICAL_IMAGE: python:2.7-slim
+  CANONICAL_ARTIFACT: oppex-integration-sdk-canonical-python27
+
+jobs:
+  canonical-python-2-7-library:
+    name: Build canonical universal wheel on Python 2.7
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use release version for a Python release tag
+        if: startsWith(github.ref, 'refs/tags/python-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^python-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as python-v1.0.0" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          version_file="python/src/oppex_sdk/_version.py"
+          sed --in-place --regexp-extended \
+            "s/^__version__ = \".*\"\$/__version__ = \"${release_version}\"/" \
+            "${version_file}"
+          grep --fixed-strings "__version__ = \"${release_version}\"" "${version_file}"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker --version
+          docker run --rm "${CANONICAL_IMAGE}" sh -c 'python -V 2>&1; python -m pip --version'
+
+      - name: Byte-compile and build the canonical artifacts on Python 2.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/workspace" \
+            --workdir /workspace \
+            --env PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            --env PIP_ROOT_USER_ACTION=ignore \
+            "${CANONICAL_IMAGE}" \
+            ./python/scripts/build-canonical.sh
+
+      - name: Restore workspace ownership
+        shell: bash
+        run: sudo chown --recursive "$(id -u):$(id -g)" python
+
+      - name: Locate canonical artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(python/dist/*-py2.py3-none-any.whl)
+          sdists=(python/dist/*.tar.gz)
+          test "${#wheels[@]}" -eq 1
+          test "${#sdists[@]}" -eq 1
+          echo "CANONICAL_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"
+          echo "CANONICAL_SDIST=${sdists[0]}" >> "${GITHUB_ENV}"
+
+      - name: Verify the wheel is a dependency-free importable library
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "${CANONICAL_WHEEL}"
+          unzip -l "${CANONICAL_WHEEL}" | grep --fixed-strings "oppex_sdk/__init__.py"
+          unzip -l "${CANONICAL_WHEEL}" | grep --fixed-strings "oppex_sdk/client.py"
+          unzip -l "${CANONICAL_WHEEL}" | grep --fixed-strings "oppex_sdk/model.py"
+          unzip -l "${CANONICAL_WHEEL}" | grep --fixed-strings "oppex_sdk/_internal/http_executor.py"
+
+          # One artifact must serve every supported interpreter.
+          unzip -p "${CANONICAL_WHEEL}" '*.dist-info/WHEEL' | grep --fixed-strings "Tag: py2-none-any"
+          unzip -p "${CANONICAL_WHEEL}" '*.dist-info/WHEEL' | grep --fixed-strings "Tag: py3-none-any"
+          unzip -p "${CANONICAL_WHEEL}" '*.dist-info/METADATA' | grep --extended-regexp "^Requires-Python: >=2\.7"
+
+          # The SDK must stay standard library only.
+          if unzip -p "${CANONICAL_WHEEL}" '*.dist-info/METADATA' | grep --quiet "^Requires-Dist:"; then
+            echo "The Python SDK must not declare runtime dependencies" >&2
+            exit 1
+          fi
+
+          # A library, not an application: nothing may install a command.
+          if unzip -l "${CANONICAL_WHEEL}" | grep --quiet "entry_points.txt"; then
+            echo "The published wheel must not declare console entry points" >&2
+            exit 1
+          fi
+
+      - name: Record canonical checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd python/dist
+          sha256sum "$(basename "${CANONICAL_WHEEL}")" > "$(basename "${CANONICAL_WHEEL}").sha256"
+          sha256sum "$(basename "${CANONICAL_SDIST}")" > "$(basename "${CANONICAL_SDIST}").sha256"
+
+      - name: Upload canonical Python artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: |
+            python/dist/*.whl
+            python/dist/*.tar.gz
+            python/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  runtime-compatibility:
+    name: Run canonical wheel on Python ${{ matrix.python }}
+    needs: canonical-python-2-7-library
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "2.7"
+            image: python:2.7-slim
+          - python: "3.5"
+            image: python:3.5-slim
+          - python: "3.8"
+            image: python:3.8-slim
+          - python: "3.11"
+            image: python:3.11-slim
+          - python: "3.13"
+            image: python:3.13-slim
+          - python: "3.14"
+            image: python:3.14-slim
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download canonical Python artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: ${{ runner.temp }}/canonical-python27
+
+      - name: Verify canonical checksums and wheel tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-python27"
+          sha256sum --check ./*.sha256
+          shopt -s nullglob
+          wheels=(*-py2.py3-none-any.whl)
+          test "${#wheels[@]}" -eq 1
+          unzip -l "${wheels[0]}" | grep --fixed-strings "oppex_sdk/client.py"
+          echo "CANONICAL_WHEEL_NAME=${wheels[0]}" >> "${GITHUB_ENV}"
+
+      - name: Install the canonical wheel and run the suite on Python ${{ matrix.python }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/workspace" \
+            --volume "${RUNNER_TEMP}/canonical-python27:/canonical:ro" \
+            --workdir /workspace \
+            --env PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            --env PIP_ROOT_USER_ACTION=ignore \
+            "${{ matrix.image }}" \
+            ./python/scripts/verify-runtime.sh "/canonical/${CANONICAL_WHEEL_NAME}" /workspace

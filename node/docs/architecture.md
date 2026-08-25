@@ -114,11 +114,17 @@ allowed to escape as an actual `Error` subclass a consumer would need to know ab
 Validates and normalizes a raw `IncidentRequestInput` into a wire-ready
 `IncidentRequest`, or throws `InvalidRequestError` (internal-only — caught by
 `IncidentClient`, never seen by a consumer). Checks: non-blank `title`/`source`,
-`source` ≤ 255 chars, `severity` in 1–5, `priority` in 1–5 (defaults to 1),
-`srcTimestamp` > 0 (defaults to `Date.now()`). Both numeric checks use
-`Number.isFinite()` rather than a plain range comparison — `NaN < 1` and `NaN > 5` are
-both `false`, so a naive range check would silently accept `NaN` as valid and let it
-serialize to `null` on the wire with no error ever surfaced.
+`source` ≤ 255 chars, `priority` in 1–5 (defaults to 1), `srcTimestamp` > 0 (defaults
+to `Date.now()`). Both numeric checks use `Number.isFinite()` rather than a plain
+range comparison — `NaN < 1` and `NaN > 5` are both `false`, so a naive range check
+would silently accept `NaN` as valid and let it serialize to `null` on the wire with
+no error ever surfaced.
+
+`severity` is deliberately **not** validated here — it's optional and unguarded,
+coerced to a number when supplied and left `undefined` (dropped from the wire) when
+not, with no range check either way. This mirrors the Oppex API itself, which doesn't
+require or validate this field server-side (confirmed directly against the API); the
+SDK doesn't enforce a stricter rule than the API actually has.
 
 ### `wireCodec` (`src/internal/wire/wireCodec.ts`)
 

@@ -34,14 +34,6 @@ expectThrows(function () {
 }, '255');
 
 expectThrows(function () {
-  buildIncidentRequest({ title: 'a', source: 'x', severity: 0 });
-}, 'severity');
-
-expectThrows(function () {
-  buildIncidentRequest({ title: 'a', source: 'x', severity: 6 });
-}, 'severity');
-
-expectThrows(function () {
   buildIncidentRequest({ title: 'a', source: 'x', severity: 2, priority: 0 });
 }, 'priority');
 
@@ -79,6 +71,19 @@ assert.strictEqual(withEmptyServiceKey.serviceKey, '', 'empty-string serviceKey 
 
 var withOmittedServiceKey = buildIncidentRequest({ title: 'a', source: 'x', severity: 2 });
 assert.strictEqual(withOmittedServiceKey.serviceKey, undefined, 'an omitted serviceKey stays undefined, distinct from null');
+
+// severity: optional and unguarded, deliberately — the Oppex API itself doesn't
+// require it or validate its range, so this SDK doesn't reject anything here either.
+// Omitted stays undefined (dropped from the wire, same mechanism as serviceKey
+// above); any supplied value, in range or not, passes straight through unchanged.
+var withOmittedSeverity = buildIncidentRequest({ title: 'a', source: 'x' });
+assert.strictEqual(withOmittedSeverity.severity, undefined, 'an omitted severity stays undefined, not defaulted or rejected');
+
+var withOutOfRangeSeverity = buildIncidentRequest({ title: 'a', source: 'x', severity: 99 });
+assert.strictEqual(withOutOfRangeSeverity.severity, 99, 'an out-of-range severity passes through unchanged, not rejected');
+
+var withZeroSeverity = buildIncidentRequest({ title: 'a', source: 'x', severity: 0 });
+assert.strictEqual(withZeroSeverity.severity, 0, 'a zero severity passes through unchanged, not rejected');
 
 // Defaults
 var req = buildIncidentRequest({ title: 'a', source: 'x', severity: 2 });

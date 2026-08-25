@@ -5,12 +5,15 @@ import { IncidentResponse } from '../../model/IncidentResponse';
  * then optional component, group, type, detailsJSON. Relies on plain-object key
  * insertion order, which JSON.stringify preserves for string keys.
  *
- * serviceKey is assigned unconditionally, not gated on `!== undefined` the way the
- * other optional fields below are — null and '' are both meaningful, deliberate wire
- * values (Oppex reads either as "auto-route this incident"), not absence. Only a
- * truly undefined serviceKey (never set on the client or overridden per-call) gets
- * dropped from the JSON, which happens automatically: JSON.stringify omits any object
- * property whose value is undefined, but still serializes null and '' literally. */
+ * serviceKey and severity are both assigned unconditionally here, not gated on
+ * `!== undefined` the way component/group/type/details are below — but for different
+ * reasons. serviceKey's null/'' are meaningful, deliberate wire values (Oppex reads
+ * either as "auto-route this incident"), not absence, so only a truly undefined
+ * serviceKey gets dropped. severity is simply optional and unguarded (see
+ * IncidentRequestInput's field comment) — when omitted it's `undefined` here too, and
+ * JSON.stringify drops it from the JSON the same automatic way; no explicit branch is
+ * needed for either, since JSON.stringify omits any object property whose value is
+ * undefined, but still serializes null and '' literally. */
 export function serializeRequest(request: IncidentRequest): string {
   const ordered: Record<string, unknown> = {};
 

@@ -29,7 +29,6 @@ public final class CompatibilitySmoke {
         IncidentClient client = IncidentClient.builder()
                 .apiKey("compatibility-api-key")
                 .serviceKey("compatibility-service-key")
-                .tenant("compatibility-tenant")
                 .build();
         try {
             assertCondition(client instanceof Closeable, "client must implement Closeable");

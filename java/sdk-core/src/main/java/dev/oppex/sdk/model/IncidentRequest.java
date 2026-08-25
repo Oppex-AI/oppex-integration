@@ -2,7 +2,7 @@ package dev.oppex.sdk.model;
 
 /**
  * An immutable incident submission. Instances are created with {@link #builder()}.
- * A request may override the service key and tenant configured on the client.
+ * A request may override the service key configured on the client.
  */
 public final class IncidentRequest {
     private static final int MAX_SOURCE_LENGTH = 255;
@@ -13,7 +13,6 @@ public final class IncidentRequest {
     private final Severity severity;
     private final int priority;
     private final long srcTimestamp;
-    private final String tenant;
     private final String component;
     private final String group;
     private final String type;
@@ -26,7 +25,6 @@ public final class IncidentRequest {
         this.severity = validatedSeverity;
         this.priority = builder.priority;
         this.srcTimestamp = validatedTimestamp;
-        this.tenant = builder.tenant;
         this.component = builder.component;
         this.group = builder.group;
         this.type = builder.type;
@@ -61,10 +59,6 @@ public final class IncidentRequest {
         return srcTimestamp;
     }
 
-    public String getTenant() {
-        return tenant;
-    }
-
     public String getComponent() {
         return component;
     }
@@ -91,7 +85,6 @@ public final class IncidentRequest {
         private Integer severityValue;
         private int priority = 1;
         private Long srcTimestamp;
-        private String tenant;
         private String component;
         private String group;
         private String type;
@@ -138,11 +131,6 @@ public final class IncidentRequest {
             return this;
         }
 
-        public Builder tenant(String tenant) {
-            this.tenant = tenant;
-            return this;
-        }
-
         public Builder component(String component) {
             this.component = component;
             return this;
@@ -171,7 +159,6 @@ public final class IncidentRequest {
                 throw new IllegalArgumentException("source must not exceed 255 characters");
             }
             validateOptional(serviceKey, "serviceKey");
-            validateOptional(tenant, "tenant");
             validateOptional(component, "component");
             validateOptional(group, "group");
             validateOptional(type, "type");
@@ -211,4 +198,3 @@ public final class IncidentRequest {
         }
     }
 }
-

@@ -10,7 +10,6 @@ public class OppexClientProducer {
     private final IncidentClient client = IncidentClient.builder()
             .apiKey(requiredEnvironment("OPPEX_API_KEY"))
             .serviceKey(requiredEnvironment("OPPEX_SERVICE_KEY"))
-            .tenant(requiredEnvironment("OPPEX_TENANT"))
             .build();
 
     @Produces
@@ -32,4 +31,3 @@ public class OppexClientProducer {
         return value;
     }
 }
-

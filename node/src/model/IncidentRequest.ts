@@ -1,11 +1,16 @@
-import { Severity, severityFromValue } from './Severity';
+import { Severity } from './Severity';
 import { InvalidRequestError } from './errors';
 import { MAX_SOURCE_LENGTH } from '../constants';
 
 export interface IncidentRequestInput {
   title: string;
   source: string;
-  severity: Severity | number;
+  // Optional and unguarded, deliberately: the Oppex API itself doesn't require this
+  // field or validate its range (confirmed directly against the API, bypassing this
+  // SDK) — so the SDK doesn't enforce a stricter rule than the API actually has.
+  // Omit it and Oppex applies its own server-side default; supply any value and it's
+  // passed straight through, whatever it is.
+  severity?: Severity | number;
   priority?: number;
   srcTimestamp?: number;
   // null (or '') is a deliberate, valid signal distinct from omitting the field
@@ -21,7 +26,7 @@ export interface IncidentRequestInput {
 export interface IncidentRequest {
   readonly title: string;
   readonly source: string;
-  readonly severity: Severity;
+  readonly severity?: Severity | number;
   readonly priority: number;
   readonly srcTimestamp: number;
   readonly serviceKey?: string | null;
@@ -80,7 +85,11 @@ export function buildIncidentRequest(input: IncidentRequestInput): IncidentReque
     throw new InvalidRequestError(`source must be at most ${MAX_SOURCE_LENGTH} characters`);
   }
 
-  const severity = severityFromValue(Number(input.severity));
+  // Unguarded on purpose (see the field comment above) — pass through whatever was
+  // given, coerced to a number; leave it undefined (dropped from the wire by
+  // JSON.stringify, same as every other omitted optional field) when not supplied at
+  // all, rather than inventing a default this SDK has no basis to choose.
+  const severity = input.severity === undefined ? undefined : Number(input.severity);
 
   // Number.isFinite, not typeof + range comparison: every comparison against NaN is
   // false (NaN < 1 and NaN > 5 are both false), so a plain range check silently lets

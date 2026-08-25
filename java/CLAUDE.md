@@ -20,9 +20,12 @@ The expected client setup is:
 IncidentClient client = IncidentClient.builder()
         .apiKey("api-key")
         .serviceKey("service-key")
-        .tenant("tenant")
         .build();
 ```
+
+The service key is optional. A client built with only `apiKey` can post incidents
+with `postWithServiceRouting`, which omits `serviceKey` from the payload so the
+API resolves the target service itself.
 
 Create one client per application, reuse it concurrently, and close it during application shutdown.
 
@@ -187,7 +190,7 @@ Generated `target/` directories are ignored and must not be committed. IDE metad
 - No setters.
 - Constructed only with its nested builder.
 - Strings are safe to share because `String` is immutable.
-- Client-level `serviceKey` and `tenant` can be overridden on an individual request.
+- Client-level `serviceKey` can be overridden on an individual request.
 - `srcTimestamp` defaults to `System.currentTimeMillis()` at build time.
 - `priority` defaults to 1.
 
@@ -201,7 +204,6 @@ Validation performed by `build()`:
 | `priority` | Between 1 and 5 |
 | `srcTimestamp` | Greater than zero when supplied |
 | `serviceKey` | Optional request override; non-blank when supplied |
-| `tenant` | Optional request override; non-blank when supplied |
 | `component` | Optional; non-blank when supplied |
 | `group` | Optional; non-blank when supplied |
 | `type` | Optional; non-blank when supplied |
@@ -231,13 +233,13 @@ Synchronous transport failures use this checked exception. It carries:
 
 #### `IncidentClientBuilder`
 
-The minimal required client configuration is:
-
-- `apiKey`
-- `serviceKey`
-- `tenant`
-
-All three are validated as non-null and non-blank during `build()`. Do not add timeout, queue, executor, proxy, serializer, connection-pool, or retry knobs to the V1 public builder without an explicit product/API decision.
+The only required client configuration is `apiKey`, validated as non-null and
+non-blank during `build()`. A default `serviceKey` is optional; a null or blank
+value is normalized to absent rather than rejected, because service routing
+covers clients that never carry one. Tenant is not a separate input and is not
+sent on the wire. Do not add timeout, queue, executor, proxy, serializer,
+connection-pool, or retry knobs to the V1 public builder without an explicit
+product/API decision.
 
 #### `IncidentClient`
 
@@ -254,7 +256,27 @@ All three are validated as non-null and non-blank during `build()`. Do not add t
 - Calling `postAsync()` after close produces `IllegalStateException`.
 - Passing a null request produces `IllegalArgumentException`.
 
-The public three-string constructor exists for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
+#### Service-key modes
+
+Two delivery modes share one client, one HTTP client, one retry policy, and one
+dispatcher. They differ only in the default service key handed to the transport:
+
+| Method | Default service key sent | Precondition |
+| --- | --- | --- |
+| `post` / `postAsync` | The client default, overridable per request | A service key must exist on the client or the request |
+| `postWithServiceRouting` / `postAsyncWithServiceRouting` | None; the wire field is omitted | The request must not carry a service key |
+
+Both preconditions fail fast before the lifecycle lock and before any HTTP work:
+a missing service key produces `IllegalStateException`, and a request-level
+service key passed to a routed method produces `IllegalArgumentException`.
+Silently dropping a caller's explicit service key would be more surprising than
+rejecting the contradiction.
+
+Service-key resolution stays in `JsonCodec` so request-over-default precedence
+has exactly one implementation. `IncidentClient` chooses only which default to
+supply.
+
+The public single- and two-string constructors exist for straightforward construction, but documentation should continue to prefer `IncidentClient.builder()` for readability and future source compatibility.
 
 ### 5.3 `sdk-bundle`
 
@@ -286,7 +308,6 @@ Wire fields:
   "severity": 2,
   "priority": 1,
   "srcTimestamp": 1787036524808,
-  "tenant": "tenant",
   "component": "deploy",
   "group": "backend",
   "type": "deployment",
@@ -294,7 +315,12 @@ Wire fields:
 }
 ```
 
-Optional fields are omitted when absent. Request-level `serviceKey` and `tenant` take precedence over client defaults.
+Optional fields are omitted when absent. A request-level `serviceKey` takes
+precedence over the client default, and `serviceKey` itself is omitted when
+neither supplies one, which is how service routing is expressed on the wire. An
+explicit null is not sent. There is no tenant configuration or tenant wire
+field; the API key plus either the service key or service routing provides the
+required routing context.
 
 The pool is configured with:
 
@@ -484,6 +510,33 @@ The smoke program is network-free. It creates and closes a client, validates mod
 
 The fat JAR is the application-facing distribution artifact. It contains no example classes and no application `Main-Class`. `sdk-core` and `sdk-http` remain separate implementation modules for development and testing.
 
+### Maven Central release
+
+Maven Central publishes one Java 7-bytecode release for all supported runtimes;
+it does not publish JDK-specific classifiers. The tag-triggered
+`.github/workflows/java-publish.yml` workflow calls the complete compatibility
+matrix before its publishing job. Stable tags have the form `java-vX.Y.Z`, and
+the workflow derives the Maven version from the tag in its temporary runner
+workspace.
+
+The protected `maven-central` environment owns the Central Portal token and GPG
+secrets. The compatibility workflow builds the canonical binary once on Java 7,
+records its SHA-256 checksum, and tests those exact bytes on Java 7, 8, 11, 17,
+21, and 25. Publishing runs on JDK 17 because the Central, source, Javadoc, and
+GPG plugins require Java 8 or newer. It downloads the tested Java 7 JAR,
+verifies the checksum, and restores that JAR after release packaging so the
+signed and deployed binary is byte-for-byte identical. The `central-release`
+profile attaches source and Javadoc JARs, signs all staged files, auto-publishes
+the validated Central bundle, and waits for the published state.
+
+The application-facing fat JAR's source classifier combines the owned sources
+from `sdk-core` and `sdk-http`. Its Javadocs are generated from those dependency
+source artifacts. Apache license and notice resources are merged during shading.
+
+The `dev.oppex` namespace must be verified in the Central Portal before the
+first release. This namespace corresponds to the `oppex.dev` DNS domain. Do not
+change the `groupId` after publication; Central releases are immutable.
+
 Once the repository has a GitHub remote, use:
 
 ```shell
@@ -495,7 +548,7 @@ gh run view "$run_id" --log-failed
 
 ## 14. Tests and verification
 
-The test suite was written alongside the implementation. At initial completion it contained 25 tests.
+The test suite was written alongside the implementation. At initial completion it contained 25 tests; service routing brought it to 33.
 
 Coverage responsibilities:
 
@@ -504,6 +557,7 @@ Coverage responsibilities:
 | Severity mapping | `SeverityTest` |
 | Request immutability/defaults/validation | `IncidentRequestTest` |
 | Client configuration validation | `IncidentClientBuilderTest` |
+| Service-key and service-routing preconditions | `IncidentClientTest` |
 | I/O and HTTP retry behavior | `RetryExecutorTest` |
 | Retry limit and backoff order | `RetryExecutorTest` |
 | Queue capacity and drop-oldest behavior | `AsyncDispatcherTest` |
@@ -511,6 +565,7 @@ Coverage responsibilities:
 | Rate-limited drop summary | `RateLimitedDropLoggerTest` |
 | Wire field names and escaping | `JsonCodecTest` |
 | Client-default/request-override precedence | `JsonCodecTest` |
+| Omitted `serviceKey` for service routing | `JsonCodecTest`, `HttpExecutorTest` |
 | Response parsing | `JsonCodecTest` |
 | Real local HTTP POST, header, and body | `HttpExecutorTest` |
 | Retryable vs non-retryable HTTP classification | `HttpExecutorTest` |
@@ -615,9 +670,9 @@ Never remove or change the meaning of existing public methods in a minor release
 - No cancellation API.
 - No framework auto-configuration or extensions.
 - No transport abstraction.
-- No Maven Central deployment profile yet.
-
-The repository has Maven coordinates and artifact structure, but final Maven Central publication metadata is intentionally incomplete. License selection, SCM coordinates, developer/organization metadata, signing configuration, and publication credentials require project-owner and legal decisions and must not be invented by a coding agent.
+- Maven Central publishing requires the repository owner to maintain the
+  verified `dev.oppex` namespace, Central Portal token, public GPG key, protected
+  GitHub environment, and repository secrets documented in `README.md`.
 
 ## 18. Final change checklist
 

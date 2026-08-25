@@ -15,21 +15,20 @@ import java.io.IOException;
 final class JsonCodec {
     private final JsonFactory jsonFactory = new JsonFactory();
 
-    String serialize(IncidentRequest request, String defaultServiceKey, String defaultTenant) throws IOException {
+    /** A null resolved service key is omitted so the API routes the incident by its own rules. */
+    String serialize(IncidentRequest request, String defaultServiceKey) throws IOException {
         String serviceKey = request.getServiceKey() == null ? defaultServiceKey : request.getServiceKey();
-        String tenant = request.getTenant() == null ? defaultTenant : request.getTenant();
 
         ByteArrayOutputStream output = new ByteArrayOutputStream(512);
         JsonGenerator json = jsonFactory.createGenerator(output, JsonEncoding.UTF8);
         try {
             json.writeStartObject();
-            json.writeStringField("serviceKey", serviceKey);
+            writeOptionalString(json, "serviceKey", serviceKey);
             json.writeStringField("title", request.getTitle());
             json.writeStringField("source", request.getSource());
             json.writeNumberField("severity", request.getSeverity().getValue());
             json.writeNumberField("priority", request.getPriority());
             json.writeNumberField("srcTimestamp", request.getSrcTimestamp());
-            json.writeStringField("tenant", tenant);
             writeOptionalString(json, "component", request.getComponent());
             writeOptionalString(json, "group", request.getGroup());
             writeOptionalString(json, "type", request.getType());
