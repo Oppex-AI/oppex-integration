@@ -75,7 +75,11 @@ The distributable output is:
 sdk-bundle/target/oppex-integration-sdk-1.0.0-SNAPSHOT.jar
 ```
 
-This JAR contains the SDK plus Apache HttpClient, Jackson Core, and their runtime dependencies. It has no `Main-Class`; add it to an application's classpath like any other library. After `mvn -pl sdk-bundle -am install`, Maven applications can depend on `dev.oppex:oppex-integration-sdk:1.0.0-SNAPSHOT`.
+This JAR contains the SDK plus Apache HttpClient, Jackson Core, and their runtime dependencies, each relocated under `dev.oppex.sdk.shaded`. Relocation matters because a fat JAR is a direct dependency and therefore sits ahead of an application's transitive dependencies on the classpath: an unrelocated `com.fasterxml.jackson.core` inside this JAR would shadow the Jackson your framework manages and break `jackson-databind` application-wide. Only the six supported public types are visible under `dev.oppex.sdk`.
+
+One consequence is intentional: because `commons-logging` is relocated too, HttpClient's internal logging no longer routes through the application's SLF4J or Log4j configuration, so `org.apache.http.wire` log settings have no effect on the SDK. Applications that want Jackson and HttpClient under application control should depend on `dev.oppex:sdk-http` instead of this bundle.
+
+It has no `Main-Class`; add it to an application's classpath like any other library. After `mvn -pl sdk-bundle -am install`, Maven applications can depend on `dev.oppex:oppex-integration-sdk:1.0.0-SNAPSHOT`.
 
 ```xml
 <dependency>

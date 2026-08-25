@@ -97,7 +97,7 @@ The build uses two implementation artifacts and one distribution artifact:
 - `sdk-http` depends on `sdk-core` and contains the client façade, client builder, HTTP implementation, retry policy, async delivery, internal metrics, and JSON codec.
 - `oppex-integration-sdk`, built from `sdk-bundle`, is the dependency-inclusive, non-executable library distributed to applications.
 
-Applications import `oppex-integration-sdk` when they need a single JAR. The bundle embeds `sdk-core`, `sdk-http`, Apache HttpClient, Jackson Core, and required transitives while preserving the same six-type supported API.
+Applications import `oppex-integration-sdk` when they need a single JAR. The bundle embeds `sdk-core`, `sdk-http`, Apache HttpClient, Jackson Core, and required transitives while preserving the same six-type supported API. Embedded third-party packages are relocated under `dev.oppex.sdk.shaded` so the bundle cannot shadow an application's own copies. An application that would rather manage Jackson and HttpClient itself depends on `sdk-http` directly.
 
 This direction avoids a circular dependency. Putting `IncidentClient` in `sdk-core` while putting its only implementation in `sdk-http` would force either a core-to-HTTP dependency cycle, reflection/service loading, or an unnecessary transport-provider abstraction. None was justified for V1.
 
@@ -127,6 +127,8 @@ Production runtime dependencies are intentionally narrow:
 - Jackson Core `2.12.7` for Java 7-compatible streaming JSON generation and parsing.
 
 Jackson Databind is deliberately not used. The API response is small and known, so streaming parsing avoids a larger object-mapping surface and databind-specific security/maintenance concerns.
+
+The bundle relocates every third-party package it embeds under `dev.oppex.sdk.shaded`. A fat JAR is resolved as a direct dependency, so its entries precede an application's transitive dependencies on the classpath. Shipping `com.fasterxml.jackson.core` unrelocated therefore silently downgraded the Jackson an application's framework had managed and broke `jackson-databind` outside the SDK entirely. Relocation is safe here because Jackson and HttpClient appear only in `JsonCodec` and `HttpExecutor` and never in a supported public signature; keeping that true is what keeps relocation available.
 
 Apache automatic retries are disabled. All retry decisions belong to `RetryExecutor`, ensuring one clear policy and accurate retry metrics.
 

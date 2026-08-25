@@ -49,7 +49,7 @@ Every language SDK owns its source tree, package-manager metadata, lockfiles, te
 
 Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `node/`, `python/`, or `golang/` respectively.
 
-The Java SDK bundles Apache HttpClient and Jackson; the Python SDK is standard library only. Neither fact may leak into the other's build, and a shared dependency choice is never assumed across languages.
+The Java SDK bundles Apache HttpClient and Jackson, relocated under `dev.oppex.sdk.shaded` so the bundle cannot shadow a consuming application's own copies; the Python SDK is standard library only. Neither fact may leak into the other's build, and a shared dependency choice is never assumed across languages.
 
 ### Shared root responsibilities
 

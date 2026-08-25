@@ -112,10 +112,31 @@ jobs:
           test -s "${FAT_JAR}"
           jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/api/IncidentClient.class"
           jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/model/IncidentRequest.class"
-          jar tf "${FAT_JAR}" | grep --fixed-strings "org/apache/http/impl/client/CloseableHttpClient.class"
-          jar tf "${FAT_JAR}" | grep --fixed-strings "com/fasterxml/jackson/core/JsonFactory.class"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/shaded/org/apache/http/impl/client/CloseableHttpClient.class"
+          jar tf "${FAT_JAR}" | grep --fixed-strings "dev/oppex/sdk/shaded/com/fasterxml/jackson/core/JsonFactory.class"
           if unzip -p "${FAT_JAR}" META-INF/MANIFEST.MF | grep --quiet '^Main-Class:'; then
             echo "Bundled SDK must be a library without Main-Class" >&2
+            exit 1
+          fi
+
+      - name: Verify every bundled dependency is relocated
+        shell: bash
+        run: |
+          set -euo pipefail
+          # An unrelocated bundled package sits ahead of an application's own copy on the
+          # classpath and shadows it, so the only permitted roots are the SDK's own shaded
+          # namespace, JAR metadata, and HttpClient's unrelocatable public-suffix resource.
+          unrelocated="$(jar tf "${FAT_JAR}" \
+            | grep --invert-match --extended-regexp '/$' \
+            | grep --invert-match --extended-regexp '^(dev/oppex/|META-INF/|mozilla/public-suffix-list\.txt$)' \
+            || true)"
+          if [[ -n "${unrelocated}" ]]; then
+            echo "Unrelocated entries in the bundled JAR:" >&2
+            echo "${unrelocated}" >&2
+            exit 1
+          fi
+          if jar tf "${FAT_JAR}" | grep --quiet --extended-regexp '^META-INF/services/(com\.fasterxml|org\.apache)\.'; then
+            echo "Bundled service-provider files must be relocated with their packages" >&2
             exit 1
           fi
 
@@ -193,7 +214,7 @@ jobs:
           test "${#fat_jars[@]}" -eq 1
           echo "FAT_JAR=${RUNNER_TEMP}/canonical-java7/${fat_jars[0]}" >> "${GITHUB_ENV}"
           jar tf "${fat_jars[0]}" | grep --fixed-strings "dev/oppex/sdk/api/IncidentClient.class"
-          jar tf "${fat_jars[0]}" | grep --fixed-strings "org/apache/http/impl/client/CloseableHttpClient.class"
+          jar tf "${fat_jars[0]}" | grep --fixed-strings "dev/oppex/sdk/shaded/org/apache/http/impl/client/CloseableHttpClient.class"
           javap -verbose -classpath "${fat_jars[0]}" dev.oppex.sdk.api.IncidentClient \
             | grep --fixed-strings "major version: 51"
 

@@ -9,6 +9,7 @@ import java.io.Closeable;
 /** Network-free source and runtime compatibility example. */
 public final class CompatibilitySmoke {
     private static final String SUCCESS_MARKER = "OPPEX_SDK_FAT_JAR_OK";
+    private static final String SHADED_PREFIX = "dev.oppex.sdk.shaded.";
 
     private CompatibilitySmoke() {
     }
@@ -32,13 +33,27 @@ public final class CompatibilitySmoke {
                 .build();
         try {
             assertCondition(client instanceof Closeable, "client must implement Closeable");
-            Class.forName("org.apache.http.impl.client.CloseableHttpClient");
-            Class.forName("com.fasterxml.jackson.core.JsonFactory");
+            assertRelocated("org.apache.http.impl.client.CloseableHttpClient");
+            assertRelocated("com.fasterxml.jackson.core.JsonFactory");
         } finally {
             client.close();
         }
 
         System.out.println(SUCCESS_MARKER + " java=" + System.getProperty("java.version"));
+    }
+
+    /**
+     * The bundle must carry each dependency under its relocated name only. An unrelocated copy would
+     * sit ahead of an application's own Jackson or HttpClient on the classpath and shadow it.
+     */
+    private static void assertRelocated(String originalName) throws Exception {
+        Class.forName(SHADED_PREFIX + originalName);
+        try {
+            Class.forName(originalName);
+            throw new IllegalStateException("Bundled dependency is not relocated: " + originalName);
+        } catch (ClassNotFoundException expected) {
+            // Only the relocated copy may ship inside the bundle.
+        }
     }
 
     private static void assertCondition(boolean condition, String message) {
