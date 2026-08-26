@@ -1,5 +1,5 @@
 {
-  "name": "@oppex/integration-sdk",
+  "name": "@oppex-dev/integration-sdk",
   "version": "1.0.0",
   "description": "Node.js SDK for posting incidents to Oppex (Node >=18, native fetch transport)",
   "license": "Apache-2.0",

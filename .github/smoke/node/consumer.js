@@ -10,8 +10,8 @@
  * phantom-dependency resolution that npm's flat node_modules silently tolerates.
  *
  * The SDK is published as two separate npm packages, not one package with two major
- * version lines — @oppex/integration-sdk (modern, fetch, Node >=18) and
- * @oppex/integration-sdk-legacy (legacy, http/https, Node >=8) — so which one to
+ * version lines — @oppex-dev/integration-sdk (modern, fetch, Node >=18) and
+ * @oppex-dev/integration-sdk-legacy (legacy, http/https, Node >=8) — so which one to
  * require is passed in via SDK_PACKAGE_NAME rather than hardcoded, letting this one
  * file cover both instead of needing a second, near-duplicate consumer script.
  *
@@ -24,7 +24,7 @@
  */
 
 var assert = require('assert');
-var packageName = process.env.SDK_PACKAGE_NAME || '@oppex/integration-sdk';
+var packageName = process.env.SDK_PACKAGE_NAME || '@oppex-dev/integration-sdk';
 
 process.env.OPPEX_TEST_ENDPOINT_URL = 'http://127.0.0.1:1';
 
