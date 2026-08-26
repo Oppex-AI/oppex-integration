@@ -170,11 +170,11 @@ interface Transport {
 }
 ```
 
-- **legacy** (`@oppex/integration-sdk-legacy`, Node ≥8): core `http`/`https`, a private
+- **legacy** (`@oppex-dev/integration-sdk-legacy`, Node ≥8): core `http`/`https`, a private
   keep-alive `Agent` per transport instance (`maxSockets: 20`), manual timeout via
   `req.setTimeout()` + `req.destroy()` — no `AbortController`, which isn't reliably
   global until Node 15.
-- **modern** (`@oppex/integration-sdk`, Node ≥18): global `fetch` only, timeout via
+- **modern** (`@oppex-dev/integration-sdk`, Node ≥18): global `fetch` only, timeout via
   `AbortSignal.timeout()`. `closeTransport()` is a no-op — `fetch`/undici exposes no
   dependency-free way to close a connection pool.
 

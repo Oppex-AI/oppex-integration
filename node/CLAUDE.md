@@ -37,10 +37,10 @@ deliberately not one package with two major version lines, so there's no shared
 `latest` dist-tag to manage between them and no risk of one variant's publish moving
 the other's `latest` backward:
 
-- **`@oppex/integration-sdk`** ("modern") — `engines.node >=18`. Transport: global
+- **`@oppex-dev/integration-sdk`** ("modern") — `engines.node >=18`. Transport: global
   `fetch` only, no `http`/`https` code at all. This is the package name most consumers
   install; it holds the "default" identity.
-- **`@oppex/integration-sdk-legacy`** ("legacy") — `engines.node >=8`. Transport: core
+- **`@oppex-dev/integration-sdk-legacy`** ("legacy") — `engines.node >=8`. Transport: core
   `http`/`https`, manual timeout (`req.setTimeout()` + `req.destroy()`). No
   `AbortController` even for the Node 15–17 portion of this variant's range — one
   uniform mechanism across the whole 8–17 span avoids an unnecessary internal branch.
@@ -60,8 +60,8 @@ there is no longer a second copy of anything to drift. `node/scripts/build-varia
 <legacy|modern>` stages the requested variant's files into their canonical top-level
 locations and builds — see §6.
 
-**Maintenance policy**: "legacy" (`@oppex/integration-sdk-legacy`) receives
-security/critical patches only. "modern" (`@oppex/integration-sdk`) is where active
+**Maintenance policy**: "legacy" (`@oppex-dev/integration-sdk-legacy`) receives
+security/critical patches only. "modern" (`@oppex-dev/integration-sdk`) is where active
 feature development happens. This is standard practice (same shape as
 Stripe/Twilio/AWS SDK version-floor raises, just expressed as a second package name
 instead of a second major), not a permanent commitment to maintaining two diverging
@@ -188,7 +188,7 @@ differences from Java, each decided explicitly rather than left as an accident:
   passed to `setLogger()`) deliberately matches `console` — and therefore Winston,
   Pino, Bunyan, since real loggers already expose exactly these four lowercase method
   names — so a host's existing logger is a drop-in value, no adapter code needed.
-  Redirect it either directly (`import { logger } from '@oppex/integration-sdk';
+  Redirect it either directly (`import { logger } from '@oppex-dev/integration-sdk';
   logger.setLogger(winstonInstance);`) or by passing `logger` in any
   `IncidentClient`'s constructor options, which internally just calls
   `logger.setLogger(...)` on the same shared instance — constructing a *second*
@@ -544,7 +544,7 @@ Both are plain `npm publish` — no `--tag` gymnastics needed. That used to matt
 both variants shared one package name and npm's `latest` dist-tag tracked *most
 recently published, not highest version* (publishing a 1.x patch after 2.x was already
 out would have silently moved `latest` backward). Being two separate package names
-(`@oppex/integration-sdk` and `@oppex/integration-sdk-legacy`) removes that risk
+(`@oppex-dev/integration-sdk` and `@oppex-dev/integration-sdk-legacy`) removes that risk
 structurally: each has its own independent `latest`, so there's nothing for one
 variant's publish to move backward on the other's behalf.
 

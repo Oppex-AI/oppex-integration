@@ -14,14 +14,14 @@ at runtime, see [`docs/architecture.md`](./docs/architecture.md).
 
 | Package | Node floor | Transport |
 | --- | --- | --- |
-| [`@oppex/integration-sdk`](https://www.npmjs.com/package/@oppex/integration-sdk) | `>=18` | global `fetch` |
-| [`@oppex/integration-sdk-legacy`](https://www.npmjs.com/package/@oppex/integration-sdk-legacy) | `>=8` | core `http`/`https` |
+| [`@oppex-dev/integration-sdk`](https://www.npmjs.com/package/@oppex-dev/integration-sdk) | `>=18` | global `fetch` |
+| [`@oppex-dev/integration-sdk-legacy`](https://www.npmjs.com/package/@oppex-dev/integration-sdk-legacy) | `>=8` | core `http`/`https` |
 
 Install whichever one matches your runtime:
 
 ```shell
-npm install @oppex/integration-sdk           # Node 18+
-npm install @oppex/integration-sdk-legacy    # Node 8+
+npm install @oppex-dev/integration-sdk           # Node 18+
+npm install @oppex-dev/integration-sdk-legacy    # Node 8+
 ```
 
 Being separate packages rather than major-version lines of one package means there's
@@ -32,9 +32,9 @@ install from the same npm registry publish.
 ## Usage
 
 ```js
-// Node 18+: const { IncidentClient, Severity } = require('@oppex/integration-sdk');
-// Node 8+:  const { IncidentClient, Severity } = require('@oppex/integration-sdk-legacy');
-const { IncidentClient, Severity } = require('@oppex/integration-sdk');
+// Node 18+: const { IncidentClient, Severity } = require('@oppex-dev/integration-sdk');
+// Node 8+:  const { IncidentClient, Severity } = require('@oppex-dev/integration-sdk-legacy');
+const { IncidentClient, Severity } = require('@oppex-dev/integration-sdk');
 ```
 
 ### Setup — one client per application
@@ -54,7 +54,7 @@ override this client-level default for just that one incident (see
 [Overriding the service key per call](#overriding-the-service-key-per-call)).
 
 Create one client per application, reuse it concurrently, and close it during
-application shutdown. This matters concretely for the `@oppex/integration-sdk-legacy`
+application shutdown. This matters concretely for the `@oppex-dev/integration-sdk-legacy`
 (`http`/`https`) package: each client owns its own private, keep-alive `Agent` — a
 deliberate choice, so that one client's `close()` can never destroy sockets a
 different, still-active client depends on — but it also means an abandoned client that
@@ -62,7 +62,7 @@ never calls `close()` leaves its socket open indefinitely, with nothing else abl
 reclaim or reuse it. Creating a fresh client per request instead of reusing one
 accumulates one such socket per abandoned client for as long as the process keeps
 running (bounded by process lifetime, not permanent — the OS reclaims everything the
-moment the process itself exits). `@oppex/integration-sdk` (modern, `fetch`-based) does
+moment the process itself exits). `@oppex-dev/integration-sdk` (modern, `fetch`-based) does
 not have this concern: it has no per-client connection pool to abandon.
 
 ### Creating an incident — `sendIncident` (waits for the result)
@@ -126,7 +126,7 @@ report before moving on.
 ### Severity
 
 ```js
-const { Severity } = require('@oppex/integration-sdk');
+const { Severity } = require('@oppex-dev/integration-sdk');
 // Severity.LOWEST = 1, LOW = 2, MEDIUM = 3, HIGH = 4, CRITICAL = 5
 ```
 
@@ -197,7 +197,7 @@ through it, not just the one you passed it to. You can also set it directly, wit
 constructing a client first:
 
 ```js
-const { logger } = require('@oppex/integration-sdk');
+const { logger } = require('@oppex-dev/integration-sdk');
 logger.setLogger(winstonLogger);
 ```
 
