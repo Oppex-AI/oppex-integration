@@ -111,7 +111,7 @@ jobs:
           consumer_dir="${RUNNER_TEMP}/consumer-npm"
           mkdir -p "${consumer_dir}"
           cp .github/smoke/node/consumer.js "${consumer_dir}/"
-          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-dev-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && npm install "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-npm-output.txt"
           grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-npm-output.txt"
@@ -138,7 +138,7 @@ jobs:
           consumer_dir="${RUNNER_TEMP}/consumer-pnpm"
           mkdir -p "${consumer_dir}"
           cp .github/smoke/node/consumer.js "${consumer_dir}/"
-          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-dev-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && pnpm install "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-pnpm-output.txt"
           grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-pnpm-output.txt"
@@ -155,7 +155,7 @@ jobs:
           consumer_dir="${RUNNER_TEMP}/consumer-yarn"
           mkdir -p "${consumer_dir}"
           cp .github/smoke/node/consumer.js "${consumer_dir}/"
-          tarball=$(ls "${RUNNER_TEMP}"/oppex-integration-sdk-*.tgz)
+          tarball=$(ls "${RUNNER_TEMP}"/oppex-dev-integration-sdk-*.tgz)
           (cd "${consumer_dir}" && npm init -y >/dev/null && yarn add "${tarball}")
           node "${consumer_dir}/consumer.js" | tee "${RUNNER_TEMP}/consumer-yarn-output.txt"
           grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/consumer-yarn-output.txt"
@@ -163,7 +163,7 @@ jobs:
       - name: Upload package tarball
         uses: actions/upload-artifact@v7
         with:
-          name: oppex-integration-sdk-node-${{ matrix.variant }}-${{ matrix.node }}
-          path: ${{ runner.temp }}/oppex-integration-sdk-*.tgz
+          name: oppex-dev-integration-sdk-node-${{ matrix.variant }}-${{ matrix.node }}
+          path: ${{ runner.temp }}/oppex-dev-integration-sdk-*.tgz
           if-no-files-found: error
           retention-days: 7
