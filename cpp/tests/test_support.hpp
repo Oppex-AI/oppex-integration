@@ -141,7 +141,11 @@ class StubServer {
 
     sockaddr_in address{};
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+    // htonl and ntohs are function-like macros on Darwin and plain functions on
+    // glibc, so they are called unqualified: a `::` in front of a macro is a
+    // syntax error, and that difference is exactly why this compiled on Linux
+    // and not on macOS.
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     address.sin_port = 0;
     if (::bind(listener_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
         ::listen(listener_, 16) != 0) {
@@ -151,7 +155,7 @@ class StubServer {
 
     socklen_t length = sizeof(address);
     ::getsockname(listener_, reinterpret_cast<sockaddr*>(&address), &length);
-    url_ = "http://127.0.0.1:" + std::to_string(::ntohs(address.sin_port)) + "/incident";
+    url_ = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port)) + "/incident";
 
     worker_ = std::thread([this] { AcceptLoop(); });
   }
