@@ -1,0 +1,4 @@
+# Wider than the 100-column default: this SDK's doc comments and builder chains
+# read better without gratuitous wrapping, and every file here is formatted by
+# `cargo fmt`, which CI enforces with `--check`.
+max_width = 110

@@ -1,0 +1,86 @@
+name: Publish Rust SDK to crates.io
+
+on:
+  push:
+    tags:
+      - "rust-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-crates-io-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/rust-compatibility.yml
+
+  publish:
+    name: Publish Rust SDK
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate and extract the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^rust-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as rust-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download the canonical crate
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-rust
+          path: ${{ runner.temp }}/canonical-rust
+
+      - name: Verify the canonical crate matches the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-rust"
+          sha256sum --check ./*.sha256
+          expected="oppex-integration-sdk-${RELEASE_VERSION}.crate"
+          test -s "${expected}"
+
+      # cargo has no "upload this .crate file" mode: `cargo publish` always
+      # packages from the working tree. So rather than pretending to hand it a
+      # file, the crate is repackaged here from the same commit and its checksum
+      # compared against the canonical one. A mismatch means the bytes about to
+      # be published are not the bytes the compatibility workflow verified, and
+      # the release stops.
+      - name: Repackage and prove the bytes match the verified crate
+        shell: bash
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          cargo package --locked
+          crate="target/package/oppex-integration-sdk-${RELEASE_VERSION}.crate"
+          repackaged="$(sha256sum "${crate}" | cut -d" " -f1)"
+          canonical="$(grep -F "oppex-integration-sdk-${RELEASE_VERSION}.crate" \
+            "${RUNNER_TEMP}/canonical-rust/oppex-integration-sdk.crate.sha256" | cut -d" " -f1)"
+          if [[ "${repackaged}" != "${canonical}" ]]; then
+            echo "Repackaged crate ${repackaged} does not match the verified crate ${canonical}" >&2
+            exit 1
+          fi
+
+      - name: Publish to crates.io
+        shell: bash
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --no-verify

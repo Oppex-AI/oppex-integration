@@ -1,0 +1,135 @@
+name: Rust compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANONICAL_ARTIFACT: oppex-integration-sdk-canonical-rust
+
+jobs:
+  library:
+    name: Build, test and package the Rust SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use the release version for a Rust release tag
+        if: startsWith(github.ref, 'refs/tags/rust-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^rust-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as rust-v1.0.0" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          # The manifest is the source of truth, and the tag has to agree with
+          # it. A mismatch is a mistake in the release, not something to paper
+          # over by rewriting the manifest.
+          manifest_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' rust/Cargo.toml | head -1)"
+          if [[ "${manifest_version}" != "${release_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match rust/Cargo.toml version ${manifest_version}" >&2
+            exit 1
+          fi
+
+      # The Rust SDK supports the current stable toolchain only, so there is one
+      # toolchain here rather than a matrix. `stable` resolves to whatever that
+      # is at run time, which is the policy itself rather than a version to keep
+      # editing.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+
+      - name: Check formatting
+        shell: bash
+        working-directory: rust
+        run: cargo fmt --check
+
+      - name: Lint
+        shell: bash
+        working-directory: rust
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        shell: bash
+        working-directory: rust
+        run: cargo test --all-targets
+
+      - name: Run the documentation tests
+        shell: bash
+        working-directory: rust
+        run: cargo test --doc
+
+      # Build the canonical artifact once, checksum it, and let every later step
+      # and the publish job use those exact bytes. `cargo package` also verifies
+      # the packaged copy compiles on its own, which is what catches a file
+      # missing from Cargo.toml's `include` list.
+      - name: Package the canonical crate
+        shell: bash
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          cargo package --locked
+          cd target/package
+          sha256sum ./*.crate > oppex-integration-sdk.crate.sha256
+          cat oppex-integration-sdk.crate.sha256
+
+      # The external consumer depends on the *extracted packaged crate*, not on
+      # the working tree, so it fails here rather than on crates.io if the
+      # published file set is incomplete.
+      - name: Build and run the external consumer against the packaged crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="${RUNNER_TEMP}/consumer"
+          mkdir -p "${consumer_dir}"
+          cp -R .github/smoke/rust/. "${consumer_dir}/"
+          crate="$(ls rust/target/package/*.crate)"
+          tar --extract --gzip --file "${crate}" --directory "${consumer_dir}"
+          mv "${consumer_dir}"/oppex-integration-sdk-* "${consumer_dir}/packaged-crate"
+          cd "${consumer_dir}"
+          cargo run --quiet | tee "${RUNNER_TEMP}/rust-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/rust-consumer-output.txt"
+
+      - name: Upload the canonical crate
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: |
+            rust/target/package/*.crate
+            rust/target/package/*.sha256
+          if-no-files-found: error
+          retention-days: 7

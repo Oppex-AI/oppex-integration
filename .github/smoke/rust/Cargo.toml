@@ -1,0 +1,17 @@
+# An isolated consumer, deliberately outside rust/ so it resolves the SDK the way
+# an external project does.
+#
+# The dependency points at `packaged-crate/`, which the workflow creates by
+# extracting the `.crate` file `cargo package` produced. That is the whole point:
+# the consumer builds against the exact bytes that would be published, so a file
+# missing from Cargo.toml's `include` list fails here rather than on crates.io.
+[package]
+name = "oppex-smoke-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+oppex-integration-sdk = { path = "packaged-crate" }
+
+[workspace]
