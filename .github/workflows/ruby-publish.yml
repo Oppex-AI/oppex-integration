@@ -1,0 +1,73 @@
+name: Publish Ruby SDK to RubyGems
+
+on:
+  push:
+    tags:
+      - "ruby-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ruby-rubygems-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/ruby-compatibility.yml
+
+  publish:
+    name: Publish Ruby SDK
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: rubygems
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate and extract the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^ruby-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as ruby-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+
+      - name: Download the canonical gem
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-ruby
+          path: ${{ runner.temp }}/canonical-ruby
+
+      - name: Verify the canonical gem matches the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-ruby"
+          sha256sum --check ./*.sha256
+          expected="oppex_sdk-${RELEASE_VERSION}.gem"
+          test -s "${expected}"
+          echo "GEM_FILE=${RUNNER_TEMP}/canonical-ruby/${expected}" >> "${GITHUB_ENV}"
+
+      # Push exactly the bytes the compatibility workflow proved, without
+      # rebuilding. The credentials file is written with a restrictive mode and
+      # removed afterwards; the key is never echoed or passed as an argument.
+      - name: Push to RubyGems
+        shell: bash
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.gem"
+          trap 'rm -f "${HOME}/.gem/credentials"' EXIT
+          install -m 600 /dev/null "${HOME}/.gem/credentials"
+          printf -- '---\n:rubygems_api_key: %s\n' "${RUBYGEMS_API_KEY}" > "${HOME}/.gem/credentials"
+          gem push "${GEM_FILE}"

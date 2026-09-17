@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+require "rake/testtask"
+require "rubocop/rake_task"
+
+Rake::TestTask.new(:test) do |task|
+  task.libs << "lib" << "test"
+  task.test_files = FileList["test/test_*.rb"]
+  task.warning = true
+  task.verbose = false
+end
+
+RuboCop::RakeTask.new
+
+desc "Run everything CI runs"
+task default: %i[rubocop test]

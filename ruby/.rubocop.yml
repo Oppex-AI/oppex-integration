@@ -1,0 +1,43 @@
+plugins:
+  - rubocop-minitest
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+
+# Documentation lives in the README and CLAUDE.md as well as in the code; the
+# public classes here all carry doc comments, but the internal ones do not need
+# a class-level comment to justify their existence.
+Style/Documentation:
+  Enabled: false
+
+# The cross-language incident contract fixes the payload's ten fields, so the
+# request constructor is wide by design rather than by accident.
+Metrics/ParameterLists:
+  Max: 11
+
+Metrics/MethodLength:
+  Max: 25
+
+Metrics/AbcSize:
+  Max: 25
+
+Metrics/ClassLength:
+  Max: 200
+
+# Test files are long because each one covers a whole component.
+Metrics/BlockLength:
+  Exclude:
+    - "test/**/*"
+
+Layout/LineLength:
+  Max: 120
+
+# Double quotes throughout, matching the rest of this repository's string style
+# rather than RuboCop's single-quote default.
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
