@@ -1,0 +1,75 @@
+name: Publish .NET SDK to NuGet
+
+on:
+  push:
+    tags:
+      - "dotnet-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dotnet-nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/dotnet-compatibility.yml
+
+  publish:
+    name: Publish .NET SDK
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: nuget
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate and extract the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^dotnet-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as dotnet-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download the canonical package
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-dotnet
+          path: ${{ runner.temp }}/canonical-dotnet
+
+      - name: Verify the canonical package matches the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-dotnet"
+          sha256sum --check ./*.sha256
+          test -s "Oppex.Integration.Sdk.${RELEASE_VERSION}.nupkg"
+          test -s "Oppex.Integration.Sdk.${RELEASE_VERSION}.snupkg"
+
+      # Push exactly the bytes the compatibility workflow proved, without
+      # repacking. The key is passed through the environment rather than as a
+      # command-line argument so it cannot appear in a process listing.
+      - name: Push to NuGet
+        shell: bash
+        working-directory: ${{ runner.temp }}/canonical-dotnet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push "Oppex.Integration.Sdk.${RELEASE_VERSION}.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${NUGET_API_KEY}"

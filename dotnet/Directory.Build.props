@@ -1,0 +1,18 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Current stable .NET only. There is no older-runtime compatibility floor
+         to preserve here, and multi-targeting would only add build surface. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Warnings are failures. This is the C# equivalent of `go vet` and
+         `cargo clippy -D warnings` in the sibling SDKs. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-Recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

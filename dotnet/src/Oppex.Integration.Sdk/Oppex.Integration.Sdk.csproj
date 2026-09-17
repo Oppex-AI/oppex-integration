@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Oppex.Integration.Sdk</RootNamespace>
+    <AssemblyName>Oppex.Integration.Sdk</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Reflection-free JSON and no dynamic code, so a consumer can trim or
+         publish ahead-of-time without this SDK being the reason they cannot. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Oppex.Integration.Sdk</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Oppex</Authors>
+    <Description>Oppex incident API client: post incidents to Oppex from .NET applications.</Description>
+    <PackageTags>oppex;incident;alerting;observability;sdk</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Oppex-AI/oppex-integration</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Oppex-AI/oppex-integration</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Every release is reproducible from its commit, which is what lets the
+         publish job ship the exact bytes the compatibility job verified. -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The one dependency: the logging abstraction every .NET host already
+         speaks. It is abstractions-only, so it pulls in no implementation. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Oppex.Integration.Sdk.Tests" />
+  </ItemGroup>
+
+</Project>
