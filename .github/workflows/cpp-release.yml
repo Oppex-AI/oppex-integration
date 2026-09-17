@@ -1,0 +1,72 @@
+name: Release C and C++ SDK
+
+# There is no canonical C or C++ package registry, so the published artifact is
+# a source archive attached to a GitHub Release rather than a registry upload.
+on:
+  push:
+    tags:
+      - "cpp-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    uses: ./.github/workflows/cpp-compatibility.yml
+
+  release:
+    name: Attach the C and C++ SDK archive
+    needs: compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # The only job in this repository that writes to the repository, and only
+      # to create the release the tag names.
+      contents: write
+
+    steps:
+      - name: Validate and extract the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^cpp-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as cpp-v1.0.0" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=${BASH_REMATCH[1]}" >> "${GITHUB_ENV}"
+
+      - name: Download the canonical archive
+        uses: actions/download-artifact@v8
+        with:
+          name: oppex-integration-sdk-canonical-cpp
+          path: ${{ runner.temp }}/canonical-cpp
+
+      - name: Verify the canonical archive matches the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-cpp"
+          sha256sum --check ./*.sha256
+          expected="oppex-integration-sdk-cpp-${RELEASE_VERSION}.tar.gz"
+          test -s "${expected}"
+          test -s "${expected}.sha256"
+
+      # Attach exactly the bytes the compatibility workflow built and proved,
+      # without rebuilding them here.
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: C and C++ SDK ${{ env.RELEASE_VERSION }}
+          body: |
+            Oppex C and C++ SDK ${{ env.RELEASE_VERSION }}.
+
+            Build it with CMake; see `cpp/README.md`. Verify the download with
+            the accompanying `.sha256` file before building.
+          files: |
+            ${{ runner.temp }}/canonical-cpp/*.tar.gz
+            ${{ runner.temp }}/canonical-cpp/*.tar.gz.sha256
+          fail_on_unmatched_files: true

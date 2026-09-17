@@ -1,0 +1,181 @@
+name: C and C++ compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANONICAL_ARTIFACT: oppex-integration-sdk-canonical-cpp
+
+jobs:
+  # The archive is the release artifact, built once here, verified below against
+  # an external consumer, and attached to the release without rebuilding.
+  # Producing it before the compiler matrix is what makes "those exact bytes"
+  # mean something.
+  package:
+    name: Build the canonical source archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Verify the tag matches the SDK version
+        if: startsWith(github.ref, 'refs/tags/cpp-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^cpp-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as cpp-v1.0.0" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          # src/version.hpp is the single source of truth, read by CMake too.
+          sdk_version="$(sed -n 's/.*OPPEX_SDK_VERSION "\([0-9.]*\)".*/\1/p' cpp/src/version.hpp)"
+          if [[ "${sdk_version}" != "${release_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match OPPEX_SDK_VERSION ${sdk_version}" >&2
+            exit 1
+          fi
+
+      - name: Build the archive
+        shell: bash
+        run: ./cpp/scripts/package.sh "${GITHUB_WORKSPACE}/cpp/dist"
+
+      - name: Upload the canonical archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: |
+            cpp/dist/*.tar.gz
+            cpp/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  library:
+    name: Build and test with ${{ matrix.compiler }} on ${{ matrix.os }}
+    needs: package
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Current toolchains only. Both major Unix compilers are covered because
+        # this SDK's warning set and C++20 usage behave differently between them,
+        # and macOS is covered because its libcurl and Apple Clang differ from
+        # the Linux pair.
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-latest
+            compiler: clang
+            cc: clang
+            cxx: clang++
+          - os: macos-latest
+            compiler: apple-clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install libcurl and clang on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes libcurl4-openssl-dev clang cmake
+
+      - name: Install libcurl on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: brew install curl
+
+      - name: Show tool versions
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          set -euo pipefail
+          cmake --version | head -1
+          "${CXX}" --version | head -1
+          "${CC}" --version | head -1
+
+      - name: Download the canonical archive
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: ${{ runner.temp }}/canonical-cpp
+
+      # Everything below builds the *extracted archive*, not the checkout, so a
+      # file missing from cpp/scripts/package.sh fails here rather than after a
+      # release is published.
+      - name: Extract and verify the canonical archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/canonical-cpp"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check ./*.sha256
+          else
+            shasum --algorithm 256 --check ./*.sha256
+          fi
+          tar --extract --gzip --file ./*.tar.gz
+          extracted="$(ls -d "${RUNNER_TEMP}"/canonical-cpp/oppex-integration-sdk-cpp-*/)"
+          echo "SDK_SOURCE=${extracted%/}" >> "${GITHUB_ENV}"
+
+      - name: Configure and build
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          set -euo pipefail
+          cmake -S "${SDK_SOURCE}" -B "${RUNNER_TEMP}/build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "${RUNNER_TEMP}/build" --parallel
+
+      - name: Test
+        shell: bash
+        run: ctest --test-dir "${RUNNER_TEMP}/build" --output-on-failure
+
+      - name: Install
+        shell: bash
+        run: cmake --install "${RUNNER_TEMP}/build" --prefix "${RUNNER_TEMP}/prefix"
+
+      # The consumer resolves the SDK with find_package against the install
+      # prefix, and builds one executable as C++ and one as C, so a missing
+      # install rule or a header that only compiles inside the source tree fails
+      # here.
+      - name: Build and run the external consumers
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          set -euo pipefail
+          consumer_dir="${RUNNER_TEMP}/consumer"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/cpp/* "${consumer_dir}/"
+          cmake -S "${consumer_dir}" -B "${RUNNER_TEMP}/consumer-build" \
+            -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/prefix"
+          cmake --build "${RUNNER_TEMP}/consumer-build" --parallel
+          "${RUNNER_TEMP}/consumer-build/consumer_cpp" | tee "${RUNNER_TEMP}/cpp-consumer-output.txt"
+          "${RUNNER_TEMP}/consumer-build/consumer_c" | tee -a "${RUNNER_TEMP}/cpp-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/cpp-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_C_OK" "${RUNNER_TEMP}/cpp-consumer-output.txt"
