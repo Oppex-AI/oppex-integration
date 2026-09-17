@@ -15,3 +15,20 @@ dist/
 .tox/
 .venv/
 venv/
+
+# Ruby
+.bundle/
+Gemfile.lock
+pkg/
+
+# .NET
+bin/
+obj/
+*.user
+
+# C and C++
+cmake-build-*/
+CMakeUserPresets.json
+
+# Go: `go build` in a main package writes the binary beside its source
+.github/smoke/go/go
