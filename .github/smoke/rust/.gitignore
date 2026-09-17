@@ -1,0 +1,4 @@
+# Created by the workflow from the packaged .crate, never committed.
+packaged-crate/
+target/
+Cargo.lock

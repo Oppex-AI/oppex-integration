@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Oppex.Integration.Sdk/Oppex.Integration.Sdk.csproj" />
+  <Project Path="tests/Oppex.Integration.Sdk.Tests/Oppex.Integration.Sdk.Tests.csproj" />
+  <Project Path="examples/Plain/Plain.csproj" />
+</Solution>

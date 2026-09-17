@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+# Development only. The gem itself has no runtime dependencies, and nothing here
+# is installed by a consumer.
+group :development do
+  gem "minitest", "~> 5.25"
+  gem "rake", "~> 13.2"
+  gem "rubocop", "~> 1.81"
+  gem "rubocop-minitest", "~> 0.38"
+  gem "rubocop-rake", "~> 0.7"
+end

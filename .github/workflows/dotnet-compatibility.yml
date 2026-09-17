@@ -1,0 +1,123 @@
+name: .NET compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dotnet-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANONICAL_ARTIFACT: oppex-integration-sdk-canonical-dotnet
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  library:
+    name: Build, test and pack the .NET SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Verify the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/dotnet-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^dotnet-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as dotnet-v1.0.0" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          # The csproj is the source of truth, and the tag has to agree with it.
+          project_version="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' \
+            dotnet/src/Oppex.Integration.Sdk/Oppex.Integration.Sdk.csproj | head -1)"
+          if [[ "${project_version}" != "${release_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match <Version> ${project_version}" >&2
+            exit 1
+          fi
+
+      # The SDK targets the current stable .NET only, so the matrix is one
+      # entry. The target framework in Directory.Build.props is the real floor;
+      # this pins the SDK that builds it.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet --info | head -20
+
+      - name: Restore
+        shell: bash
+        working-directory: dotnet
+        run: dotnet restore Oppex.Integration.Sdk.slnx
+
+      # Warnings are errors and the analyzers run as part of the build, so this
+      # step is the lint step too.
+      - name: Build
+        shell: bash
+        working-directory: dotnet
+        run: dotnet build Oppex.Integration.Sdk.slnx -c Release --no-restore
+
+      - name: Test
+        shell: bash
+        working-directory: dotnet
+        run: dotnet test Oppex.Integration.Sdk.slnx -c Release --no-build
+
+      # Pack the canonical artifact once and let the smoke consumer and the
+      # publish job use those exact bytes.
+      - name: Pack the canonical package
+        shell: bash
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          dotnet pack src/Oppex.Integration.Sdk/Oppex.Integration.Sdk.csproj -c Release --no-build -o dist
+          cd dist
+          sha256sum ./*.nupkg ./*.snupkg > oppex-integration-sdk.sha256
+          cat oppex-integration-sdk.sha256
+
+      # The consumer resolves a PackageReference from a local folder feed holding
+      # the packed .nupkg, with nuget.org cleared, so a restore can only succeed
+      # against the package under test.
+      - name: Restore and run the external consumer against the packed package
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' \
+            dotnet/src/Oppex.Integration.Sdk/Oppex.Integration.Sdk.csproj | head -1)"
+          consumer_dir="${RUNNER_TEMP}/consumer"
+          mkdir -p "${consumer_dir}/local-feed"
+          cp .github/smoke/dotnet/Consumer.csproj .github/smoke/dotnet/Program.cs \
+             .github/smoke/dotnet/nuget.config "${consumer_dir}/"
+          cp dotnet/dist/*.nupkg "${consumer_dir}/local-feed/"
+          cd "${consumer_dir}"
+          dotnet run -c Release "-p:OppexSdkVersion=${package_version}" \
+            | tee "${RUNNER_TEMP}/dotnet-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/dotnet-consumer-output.txt"
+
+      - name: Upload the canonical package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: |
+            dotnet/dist/*.nupkg
+            dotnet/dist/*.snupkg
+            dotnet/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,102 @@
+name: Go compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  library:
+    name: Build and verify the Go SDK on ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Go SDK supports the current stable release only, so the matrix is
+        # one entry. `stable` resolves to whatever that is at run time, which is
+        # the policy itself rather than a version to keep editing here.
+        go: ["stable"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          # go.mod has no require block, so there is nothing to cache and a cache
+          # miss would be reported as a warning on every run.
+          cache: false
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          go version
+
+      - name: Verify the module is tidy
+        shell: bash
+        working-directory: golang
+        run: |
+          set -euo pipefail
+          cp go.mod go.mod.orig
+          go mod tidy
+          # A drifted go.mod means the committed module metadata does not match
+          # the source, which the module proxy would serve to consumers as-is.
+          diff --unified go.mod.orig go.mod
+          rm go.mod.orig
+
+      - name: Check formatting
+        shell: bash
+        working-directory: golang
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [[ -n "${unformatted}" ]]; then
+            echo "These files are not gofmt-clean:" >&2
+            echo "${unformatted}" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        shell: bash
+        working-directory: golang
+        run: go vet ./...
+
+      - name: Build
+        shell: bash
+        working-directory: golang
+        run: go build ./...
+
+      # The race detector is not optional here. The dispatcher, the drop logger
+      # and the client lifecycle are all concurrent, and every concurrency bug
+      # found while writing this SDK was found by a race run or a timeout test.
+      - name: Test with the race detector
+        shell: bash
+        working-directory: golang
+        run: go test -race -count=1 ./...
+
+      # The Go module proxy serves source, so there is no artifact to build,
+      # checksum and re-run the way the Java and Python matrices do. The
+      # equivalent proof is this: an isolated consumer module, outside golang/,
+      # resolving the SDK by its real import path and using only exported API.
+      - name: Build and run the external consumer
+        shell: bash
+        working-directory: .github/smoke/go
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go run . | tee "${RUNNER_TEMP}/go-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/go-consumer-output.txt"

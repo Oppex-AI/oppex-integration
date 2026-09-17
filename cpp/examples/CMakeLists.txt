@@ -1,0 +1,8 @@
+enable_language(C)
+
+add_executable(oppex_example_plain plain.cpp)
+target_link_libraries(oppex_example_plain PRIVATE oppex_sdk)
+
+add_executable(oppex_example_plain_c plain_c.c)
+target_link_libraries(oppex_example_plain_c PRIVATE oppex_sdk)
+set_target_properties(oppex_example_plain_c PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)

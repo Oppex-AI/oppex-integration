@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Oppex.Integration.Sdk.Examples.Plain</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Oppex.Integration.Sdk/Oppex.Integration.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

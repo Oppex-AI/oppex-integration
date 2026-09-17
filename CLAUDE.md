@@ -6,7 +6,7 @@ This is the durable repository-level guide. Read it before changing shared autom
 
 This repository houses equivalent Oppex integration libraries for multiple programming languages. Each SDK should present conventions natural to its language while preserving the shared incident-delivery contract and keeping release lifecycles independent.
 
-The Java SDK was the first implementation and lives entirely under `java/`. The Python SDK followed and lives entirely under `python/`.  A Node.js implementation now lives entirely under `node/`. Future Go implementations must be added as peer directories rather than mixed into an existing SDK's build.
+The Java SDK was the first implementation and lives entirely under `java/`. The Python SDK followed and lives entirely under `python/`. A Node.js implementation lives entirely under `node/`. Go, Rust, Ruby, .NET, and C/C++ implementations followed, under `golang/`, `rust/`, `ruby/`, `dotnet/`, and `cpp/`. Any further language must be added as a peer directory rather than mixed into an existing SDK's build.
 
 ## Repository layout
 
@@ -26,14 +26,38 @@ oppex-integration/
 │   ├── src/oppex_sdk/
 │   ├── tests/
 │   ├── scripts/
-│   └── examples/            # Future JavaScript/TypeScript SDK
+│   └── examples/
 ├── node/                   # Complete Node.js SDK project
 │   ├── package.json
 │   ├── src/
 │   ├── test/
 │   └── scripts/
-├── python/                 # Future Python SDK
-├── golang/                 # Future Go SDK
+├── golang/                 # Complete Go SDK project
+│   ├── go.mod
+│   ├── oppex/
+│   └── examples/
+├── rust/                   # Complete Rust SDK project
+│   ├── Cargo.toml
+│   ├── src/
+│   ├── tests/
+│   └── examples/
+├── ruby/                   # Complete Ruby SDK project
+│   ├── oppex_sdk.gemspec
+│   ├── lib/oppex_sdk/
+│   ├── test/
+│   └── examples/
+├── dotnet/                 # Complete .NET SDK project
+│   ├── Oppex.Integration.Sdk.slnx
+│   ├── src/
+│   ├── tests/
+│   └── examples/
+├── cpp/                    # Complete C and C++ SDK project
+│   ├── CMakeLists.txt
+│   ├── include/oppex/
+│   ├── src/
+│   ├── tests/
+│   ├── examples/
+│   └── scripts/
 ├── .gitignore
 ├── README.md
 └── CLAUDE.md
@@ -41,15 +65,17 @@ oppex-integration/
 
 Only create a future language directory when implementation work begins. Empty placeholder directories are not committed by Git and should not be added merely to reserve names.
 
+`golang/` rather than `go/` because a directory named `go` at a module path root confuses several Go tools; `cpp/` holds both the C++ library and its C ABI, since they are one build producing one library.
+
 ## Structural decisions
 
 ### Language isolation
 
 Every language SDK owns its source tree, package-manager metadata, lockfiles, tests, examples, compatibility policy, and release configuration. One SDK must not require another SDK's toolchain to build or test.
 
-Do not place Maven modules, Python packages, Node workspaces, or Go modules at repository root. Their build roots belong in `java/`, `node/`, `python/`, or `golang/` respectively.
+Do not place a Maven module, Python package, Node workspace, Go module, Cargo manifest, gemspec, MSBuild project, or top-level `CMakeLists.txt` at repository root. Their build roots belong in `java/`, `node/`, `python/`, `golang/`, `rust/`, `ruby/`, `dotnet/`, and `cpp/` respectively.
 
-The Java SDK bundles Apache HttpClient and Jackson, relocated under `dev.oppex.sdk.shaded` so the bundle cannot shadow a consuming application's own copies; the Python SDK is standard library only. Neither fact may leak into the other's build, and a shared dependency choice is never assumed across languages.
+The Java SDK bundles Apache HttpClient and Jackson, relocated under `dev.oppex.sdk.shaded` so the bundle cannot shadow a consuming application's own copies; the Python, Go and Ruby SDKs are standard library only; the Rust SDK depends on `ureq`, `serde_json` and `log`; the .NET SDK on `Microsoft.Extensions.Logging.Abstractions`; the C/C++ SDK on libcurl. Neither fact may leak into another's build, and a shared dependency choice is never assumed across languages.
 
 ### Shared root responsibilities
 
@@ -66,7 +92,9 @@ GitHub workflow YAML must remain under root `.github/workflows/`; GitHub does no
 
 Language SDKs may use different version numbers and release cadences. Do not assume a Java artifact version is also the Python, npm, or Go module version. Release jobs must identify both the language and package being published.
 
-Release tags are language-qualified: `java-vX.Y.Z` publishes the Java SDK to Maven Central, `python-vX.Y.Z` publishes the Python SDK to PyPI. A tag must never trigger another language's release.
+Release tags are language-qualified: `java-vX.Y.Z` publishes to Maven Central, `python-vX.Y.Z` to PyPI, `rust-vX.Y.Z` to crates.io, `ruby-vX.Y.Z` to RubyGems, `dotnet-vX.Y.Z` to NuGet, and `cpp-vX.Y.Z` attaches a source archive to a GitHub Release. A tag must never trigger another language's release.
+
+Go is the one exception to the tag format, and it is a Go requirement rather than a preference: a module in a subdirectory is only resolvable from a tag carrying that directory prefix, so the Go SDK releases as `golang/vX.Y.Z`. It has no publish workflow at all, because the module proxy serves source straight from the repository.
 
 ### Shared API semantics, idiomatic surfaces
 
@@ -81,6 +109,11 @@ Do not introduce a cross-language generator, schema compiler, or shared runtime 
 - Java: [`java/CLAUDE.md`](java/CLAUDE.md)
 - Node.js: [`node/CLAUDE.md`](node/CLAUDE.md)
 - Python: [`python/CLAUDE.md`](python/CLAUDE.md)
+- Go: [`golang/CLAUDE.md`](golang/CLAUDE.md)
+- Rust: [`rust/CLAUDE.md`](rust/CLAUDE.md)
+- Ruby: [`ruby/CLAUDE.md`](ruby/CLAUDE.md)
+- .NET: [`dotnet/CLAUDE.md`](dotnet/CLAUDE.md)
+- C and C++: [`cpp/CLAUDE.md`](cpp/CLAUDE.md)
 - GitHub automation: [`.github/CLAUDE.md`](.github/CLAUDE.md)
 
 ## Shared contract decisions
@@ -102,11 +135,11 @@ Each SDK documents its own idiomatic surface and any intentional deviation in it
 
 When adding a new SDK:
 
-1. Create the canonical peer directory (eg `golang/`).
+1. Create the canonical peer directory (eg `kotlin/`), named after the language rather than an implementation.
 2. Add a language README with installation, usage, build, test, and release instructions.
 3. Add a language-root `CLAUDE.md` recording compatibility floors, public API boundaries, dependencies, concurrency/lifecycle behavior, packaging, and directory ownership.
 4. Keep source, tests, examples, dependency metadata, and generated outputs within that directory.
-5. Add a root workflow whose commands are scoped to that directory.
+5. Add a root workflow whose commands are scoped to that directory, plus a release workflow if the language has a registry to publish to.
 6. Add an isolated consumer under `.github/smoke/<language>/` that uses only the published artifact surface.
 7. Use language-qualified workflow and artifact names so matrix outputs cannot collide.
 8. Update this guide and the root README with the implemented status and any shared contract decision.
@@ -122,7 +155,7 @@ When adding a new SDK:
 
 ## Compatibility-floor pattern
 
-Both implemented SDKs support a runtime far older than their build tooling prefers, and both prove it the same way. Reuse this shape for a new SDK rather than inventing another:
+The Java, Python and Node.js SDKs each support a runtime far older than their build tooling prefers, and all three prove it the same way. Reuse this shape for a new SDK with an old floor rather than inventing another:
 
 1. Build one canonical artifact on the oldest supported runtime.
 2. Checksum it and upload it once.
@@ -130,6 +163,24 @@ Both implemented SDKs support a runtime far older than their build tooling prefe
 4. Publish the same bytes, without rebuilding them, from a tag-triggered job.
 
 Java runs its matrix with `actions/setup-java`; Python runs its matrix in pinned `python:<version>-slim` containers so no job depends on which interpreters a runner image happens to ship.
+
+### Current-stable-only SDKs
+
+The Go, Rust, Ruby, .NET and C/C++ SDKs deliberately support the **current stable release of their language only**. They carry no older-runtime compatibility floor, and the version-sweep half of the pattern above collapses to a single entry — or, for C/C++, to a compiler sweep rather than a version sweep, because there is no single "C++ runtime version" to pin.
+
+What does not collapse is steps 1, 2 and 4. Every one of these SDKs still builds one canonical artifact, checksums it, verifies **those bytes** against an isolated external consumer, and publishes the same bytes without rebuilding:
+
+| SDK | Canonical artifact | What the consumer proves |
+| --- | --- | --- |
+| Rust | the `.crate` from `cargo package` | nothing is missing from `Cargo.toml`'s `include` list |
+| Ruby | the `.gem`, installed into a throwaway `GEM_HOME` | nothing is missing from `gemspec.files` |
+| .NET | the `.nupkg`, restored from a local feed with nuget.org cleared | the package, not a project reference, is usable |
+| C and C++ | the source archive from `cpp/scripts/package.sh` | nothing is missing from the archive, and the install rules work |
+| Go | none: the proxy serves source | an outside module resolves the SDK by its real import path |
+
+Each matrix pins "current stable" by name rather than by number — `stable` for Go and Rust, `ruby` for Ruby — so the policy is expressed once instead of being a version someone has to keep editing.
+
+Do not add an older runtime to one of these matrices without first recording the decision in that SDK's `CLAUDE.md`. Supporting an old floor is the expensive, deliberate choice the first three SDKs made for reasons their own guides explain; it is not a default.
 
 ## Java relocation decision
 

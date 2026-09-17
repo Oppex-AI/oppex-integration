@@ -1,0 +1,4 @@
+# Filled by the workflow with the packed .nupkg, never committed.
+local-feed/
+bin/
+obj/

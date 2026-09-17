@@ -1,0 +1,112 @@
+name: Ruby compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ruby-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANONICAL_ARTIFACT: oppex-integration-sdk-canonical-ruby
+
+jobs:
+  library:
+    name: Build, test and package the Ruby SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Verify the tag matches the gem version
+        if: startsWith(github.ref, 'refs/tags/ruby-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^ruby-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Expected a stable release tag such as ruby-v1.0.0" >&2
+            exit 1
+          fi
+          release_version="${BASH_REMATCH[1]}"
+          # lib/oppex_sdk/version.rb is the source of truth, and the tag has to
+          # agree with it. A mismatch is a mistake in the release, not something
+          # to paper over by rewriting the version file.
+          gem_version="$(sed -n 's/^ *VERSION = "\(.*\)"$/\1/p' ruby/lib/oppex_sdk/version.rb)"
+          if [[ "${gem_version}" != "${release_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match Oppex::VERSION ${gem_version}" >&2
+            exit 1
+          fi
+
+      # The Ruby SDK supports the current stable release only, so the matrix is
+      # one entry. `ruby` resolves to the latest stable MRI at run time, which is
+      # the policy itself rather than a version to keep editing here.
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+          bundler-cache: true
+          working-directory: ruby
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby --version
+          gem --version
+
+      - name: Lint and test
+        shell: bash
+        working-directory: ruby
+        run: bundle exec rake
+
+      # Build the canonical artifact once and let the smoke consumer and the
+      # publish job use those exact bytes.
+      - name: Build the canonical gem
+        shell: bash
+        working-directory: ruby
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gem build oppex_sdk.gemspec
+          mv oppex_sdk-*.gem dist/
+          cd dist
+          sha256sum ./*.gem > oppex_sdk.gem.sha256
+          cat oppex_sdk.gem.sha256
+
+      # The consumer installs the *built gem* into a throwaway GEM_HOME rather
+      # than adding lib/ to the load path, so it fails here rather than on
+      # RubyGems if a file is missing from gemspec.files.
+      - name: Install the built gem and run the external consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          gem_file="$(ls ruby/dist/*.gem)"
+          export GEM_HOME="${RUNNER_TEMP}/gems"
+          export GEM_PATH="${GEM_HOME}"
+          gem install "${gem_file}" --no-document
+          consumer_dir="${RUNNER_TEMP}/consumer"
+          mkdir -p "${consumer_dir}"
+          cp .github/smoke/ruby/consumer.rb "${consumer_dir}/"
+          cd "${consumer_dir}"
+          ruby consumer.rb | tee "${RUNNER_TEMP}/ruby-consumer-output.txt"
+          grep --fixed-strings "EXTERNAL_CONSUMER_OK" "${RUNNER_TEMP}/ruby-consumer-output.txt"
+
+      - name: Upload the canonical gem
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.CANONICAL_ARTIFACT }}
+          path: |
+            ruby/dist/*.gem
+            ruby/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
