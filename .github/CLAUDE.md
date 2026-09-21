@@ -26,12 +26,18 @@ This directory contains repository automation and consumer smoke sources. It is 
   `python-vX.Y.Z` tags and must pass the complete Python compatibility workflow
   before publishing. A tag must never trigger another language's release.
 - Keep Central Portal and GPG credentials in the protected `maven-central`
-  GitHub environment, and the PyPI API token in the protected `pypi`
-  environment. Never echo, persist, upload, or pass any of them as command-line
+  GitHub environment, and the remaining registry tokens in their own protected
+  environments. Never echo, persist, upload, or pass any of them as command-line
   arguments. An environment secret is reachable only by a job that declares that
-  environment, which is why the publish jobs declare one. Prefer PyPI trusted
-  publishing over a token when it can be configured; it needs `id-token: write`
-  on the publishing job alone and leaves no credential to leak.
+  environment, which is why the publish jobs declare one.
+- PyPI is the one registry that holds no credential at all: the Python publish
+  job uses trusted publishing, declaring `id-token: write` on that job alone and
+  passing no password to `pypa/gh-action-pypi-publish`. The publisher registered
+  on PyPI pins the repository, the workflow **filename**
+  `python-publish.yml`, and the `pypi` environment, so renaming that file or
+  changing that environment breaks releases even though nothing in this
+  repository looks wrong. Prefer this over a token for any registry that
+  supports it.
 - Maven Central receives one Java 7-compatible release, not one classifier per
   tested JDK. Build the canonical JAR once on Java 7, checksum it, and run those
   exact bytes on every supported JDK. The publishing job may generate metadata
