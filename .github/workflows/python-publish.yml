@@ -24,6 +24,9 @@ jobs:
     environment: pypi
     permissions:
       contents: read
+      # PyPI trusted publishing exchanges this OIDC token for a short-lived
+      # upload token, so the publishing job needs it and nothing else does.
+      id-token: write
 
     steps:
       - name: Validate and extract release version
@@ -69,6 +72,7 @@ jobs:
         with:
           packages-dir: ${{ env.UPLOAD_DIRECTORY }}
           print-hash: true
-          # The token lives only in the protected `pypi` environment. The action
-          # defaults the username to `__token__`, so nothing else is needed.
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          # No credential: the action detects the OIDC token and trades it with
+          # PyPI. The trusted publisher registered there pins this repository,
+          # this workflow filename, and the `pypi` environment above, so all
+          # three must keep matching for an upload to be accepted.
