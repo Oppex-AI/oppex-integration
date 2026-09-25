@@ -30,13 +30,15 @@ This directory contains repository automation and consumer smoke sources. It is 
   environments. Never echo, persist, upload, or pass any of them as command-line
   arguments. An environment secret is reachable only by a job that declares that
   environment, which is why the publish jobs declare one.
-- PyPI is the one registry that holds no credential at all: the Python publish
-  job uses trusted publishing, declaring `id-token: write` on that job alone and
-  passing no password to `pypa/gh-action-pypi-publish`. The publisher registered
-  on PyPI pins the repository, the workflow **filename**
-  `python-publish.yml`, and the `pypi` environment, so renaming that file or
-  changing that environment breaks releases even though nothing in this
-  repository looks wrong. Prefer this over a token for any registry that
+- PyPI and RubyGems hold no credential at all: their publish jobs use trusted
+  publishing, declaring `id-token: write` on that job alone. The Python job
+  passes no password to `pypa/gh-action-pypi-publish`; the Ruby job runs
+  `rubygems/configure-rubygems-credentials`, which exports a short-lived
+  `GEM_HOST_API_KEY` for `gem push`. Each registered publisher pins the
+  repository, the workflow **filename** (`python-publish.yml`,
+  `ruby-publish.yml`), and the environment (`pypi`, `rubygems`), so renaming
+  that file or changing that environment breaks releases even though nothing in
+  this repository looks wrong. Prefer this over a token for any registry that
   supports it.
 - Maven Central receives one Java 7-compatible release, not one classifier per
   tested JDK. Build the canonical JAR once on Java 7, checksum it, and run those
@@ -112,6 +114,7 @@ one the compatibility workflow verified. Do not replace that check with a copy o
 the artifact into `target/package/`: `cargo publish` repackages regardless, so
 the copy would prove nothing.
 
-Registry credentials live in protected environments — `crates-io`, `rubygems`,
-`nuget` — alongside the existing `maven-central` and `pypi`. Prefer trusted
+Registry credentials live in protected environments — `crates-io` and `nuget` —
+alongside the existing `maven-central`; `pypi` and `rubygems` are still declared
+but hold no secret, because trusted publishing pins them. Prefer trusted
 publishing over a long-lived key wherever the registry supports it.
