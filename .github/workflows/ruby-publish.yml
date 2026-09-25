@@ -24,6 +24,9 @@ jobs:
     environment: rubygems
     permissions:
       contents: read
+      # RubyGems trusted publishing exchanges this OIDC token for a short-lived
+      # API key, so the publishing job needs it and nothing else does.
+      id-token: write
 
     steps:
       - name: Validate and extract the release version
@@ -57,17 +60,17 @@ jobs:
           test -s "${expected}"
           echo "GEM_FILE=${RUNNER_TEMP}/canonical-ruby/${expected}" >> "${GITHUB_ENV}"
 
+      # No stored credential: the action trades the OIDC token for a short-lived
+      # key exported as GEM_HOST_API_KEY. Such a key is also exempt from the
+      # OTP that the gemspec's rubygems_mfa_required demands of a human push.
+      # The trusted publisher registered on RubyGems pins this repository, this
+      # workflow filename, and the `rubygems` environment above, so all three
+      # must keep matching for a push to be accepted.
+      - name: Configure RubyGems credentials
+        uses: rubygems/configure-rubygems-credentials@v2.1.0
+
       # Push exactly the bytes the compatibility workflow proved, without
-      # rebuilding. The credentials file is written with a restrictive mode and
-      # removed afterwards; the key is never echoed or passed as an argument.
+      # rebuilding.
       - name: Push to RubyGems
         shell: bash
-        env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/.gem"
-          trap 'rm -f "${HOME}/.gem/credentials"' EXIT
-          install -m 600 /dev/null "${HOME}/.gem/credentials"
-          printf -- '---\n:rubygems_api_key: %s\n' "${RUBYGEMS_API_KEY}" > "${HOME}/.gem/credentials"
-          gem push "${GEM_FILE}"
+        run: gem push "${GEM_FILE}"

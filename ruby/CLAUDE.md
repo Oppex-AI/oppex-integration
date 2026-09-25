@@ -264,7 +264,12 @@ publish those bytes" shape the Java and Python releases use.
 Bump `Oppex::VERSION` in `lib/oppex_sdk/version.rb` as a normal reviewed change.
 The tag's version must match it; the workflow fails if it does not.
 
-The RubyGems API key lives in the protected `rubygems` GitHub environment and is
-never echoed, persisted, or passed as a command-line argument. The gemspec sets
-`rubygems_mfa_required`, so a human pushing this gem by hand needs MFA; prefer
-RubyGems trusted publishing over a long-lived key when it can be configured.
+The release uses RubyGems trusted publishing, so no API key is stored anywhere.
+The publish job declares `id-token: write` and the `rubygems` environment, and
+`rubygems/configure-rubygems-credentials` trades the OIDC token for a
+short-lived key. The trusted publisher registered on rubygems.org pins the
+repository, the workflow filename `ruby-publish.yml`, and the `rubygems`
+environment; renaming either breaks releases. The gemspec sets
+`rubygems_mfa_required`, which a long-lived API key cannot satisfy from CI
+because every push would demand an OTP — that is why trusted publishing is
+required here rather than preferred.
